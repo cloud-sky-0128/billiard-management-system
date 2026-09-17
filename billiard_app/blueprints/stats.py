@@ -4,6 +4,7 @@ from flask import Blueprint, flash, render_template, request
 
 from ..config import DISCOUNT_SCOPE_TABLE_AND_DRINK
 from ..db import get_db
+from ..money import percentage_of_cents
 from ..services.billing import discount_pricing_label, discount_scope_label
 
 bp = Blueprint("stats", __name__)
@@ -31,18 +32,18 @@ def stats_page():
             s.table_no,
             s.mode,
             s.end_time,
-            s.table_fee,
+            s.table_fee_cents,
             s.discount_name,
             s.discount_pricing_method,
-            s.discount_package_rate_per_hour,
+            s.discount_package_rate_per_hour_cents,
             s.discount_percent,
             s.discount_scope,
-            s.discount_amount,
-            s.final_total,
-            COALESCE(o.food_total, 0) AS food_total
+            s.discount_amount_cents,
+            s.final_total_cents,
+            COALESCE(o.food_total_cents, 0) AS food_total_cents
         FROM sessions s
         LEFT JOIN (
-            SELECT session_id, SUM(subtotal) AS food_total
+            SELECT session_id, SUM(subtotal_cents) AS food_total_cents
             FROM orders
             GROUP BY session_id
         ) o ON o.session_id = s.id
@@ -52,49 +53,51 @@ def stats_page():
         (start_iso, end_iso),
     ).fetchall()
 
-    table_revenue = 0.0
-    food_revenue = 0.0
-    gross_total = 0.0
-    net_total = 0.0
+    table_revenue_cents = 0
+    food_revenue_cents = 0
+    gross_total_cents = 0
+    net_total_cents = 0
     session_rows: list[dict] = []
 
     for row in closed_rows:
-        table_fee = float(row["table_fee"] or 0)
-        food_fee = float(row["food_total"] or 0)
+        table_fee_cents = int(row["table_fee_cents"] or 0)
+        food_fee_cents = int(row["food_total_cents"] or 0)
         discount_percent = float(row["discount_percent"] or 100)
         discount_scope = row["discount_scope"] or DISCOUNT_SCOPE_TABLE_AND_DRINK
-        discount_amount = float(row["discount_amount"] or 0)
-        gross = table_fee + food_fee
+        discount_amount_cents = int(row["discount_amount_cents"] or 0)
+        gross_cents = table_fee_cents + food_fee_cents
 
-        final_total = float(row["final_total"] or 0)
-        if final_total <= 0:
-            if discount_amount > 0:
-                final_total = round(gross - discount_amount, 2)
+        final_total_cents = int(row["final_total_cents"] or 0)
+        if final_total_cents <= 0:
+            if discount_amount_cents > 0:
+                final_total_cents = gross_cents - discount_amount_cents
             else:
-                final_total = round(gross * discount_percent / 100, 2)
+                final_total_cents = percentage_of_cents(
+                    gross_cents, discount_percent
+                )
 
-        table_revenue += table_fee
-        food_revenue += food_fee
-        gross_total += gross
-        net_total += final_total
+        table_revenue_cents += table_fee_cents
+        food_revenue_cents += food_fee_cents
+        gross_total_cents += gross_cents
+        net_total_cents += final_total_cents
 
         session_rows.append(
             {
                 "table_no": row["table_no"],
                 "mode_label": "包台" if row["mode"] == "package" else "計時",
                 "end_time": row["end_time"],
-                "table_fee": table_fee,
-                "food_fee": food_fee,
+                "table_fee_cents": table_fee_cents,
+                "food_fee_cents": food_fee_cents,
                 "discount_name": row["discount_name"] or (
                     "原價" if discount_percent == 100 else "自訂折扣"
                 ),
                 "discount_label": discount_pricing_label(
                     row["discount_pricing_method"] or "percentage",
                     discount_percent,
-                    row["discount_package_rate_per_hour"],
+                    row["discount_package_rate_per_hour_cents"],
                 ),
                 "discount_scope_label": discount_scope_label(discount_scope),
-                "final_total": final_total,
+                "final_total_cents": final_total_cents,
             }
         )
 
@@ -116,10 +119,10 @@ def stats_page():
     return render_template(
         "stats.html",
         selected_date=selected_date.isoformat(),
-        table_revenue=table_revenue,
-        food_revenue=food_revenue,
-        gross_total=gross_total,
-        net_total=net_total,
+        table_revenue_cents=table_revenue_cents,
+        food_revenue_cents=food_revenue_cents,
+        gross_total_cents=gross_total_cents,
+        net_total_cents=net_total_cents,
         traffic_data=traffic_data,
         max_traffic=max_traffic,
         closed_sessions=session_rows,

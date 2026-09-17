@@ -11,15 +11,16 @@ from ..config import (
     DISCOUNT_SCOPE_TABLE_AND_DRINK,
     DISCOUNT_SCOPE_TABLE_ONLY,
 )
-from ..db import get_db, get_setting_float, get_setting_int
+from ..db import get_db, get_setting_cents, get_setting_int
+from ..money import format_cents
 
 
 def calculate_timed_charge(
-    start_dt: datetime, end_dt: datetime, rate_per_minute: float
-) -> tuple[int, float]:
+    start_dt: datetime, end_dt: datetime, rate_per_minute_cents: int
+) -> tuple[int, int]:
     elapsed_seconds = max(0.0, (end_dt - start_dt).total_seconds())
     elapsed_minutes = max(1, math.ceil(elapsed_seconds / 60))
-    return elapsed_minutes, round(elapsed_minutes * float(rate_per_minute), 2)
+    return elapsed_minutes, elapsed_minutes * int(rate_per_minute_cents)
 
 
 def active_session_by_table(table_no: int) -> sqlite3.Row | None:
@@ -37,8 +38,8 @@ def table_rate_for(table_no: int) -> sqlite3.Row | dict:
         return row
     return {
         "table_no": table_no,
-        "timed_rate_per_min": get_setting_float("timed_rate_group", 3.0),
-        "package_rate_per_hour": get_setting_float("package_hour_rate", 150),
+        "timed_rate_per_min_cents": get_setting_cents("timed_rate_group", "3.0"),
+        "package_rate_per_hour_cents": get_setting_cents("package_hour_rate", "150"),
         "package_enabled": 1,
     }
 
@@ -63,10 +64,13 @@ def discount_type_applies_to_session(
     if applicable_mode != DISCOUNT_MODE_ALL and applicable_mode != session["mode"]:
         return False
     if discount_type["pricing_method"] == DISCOUNT_PRICING_PACKAGE_HOURLY:
-        if session["mode"] != "package" or discount_type["package_rate_per_hour"] is None:
+        if (
+            session["mode"] != "package"
+            or discount_type["package_rate_per_hour_cents"] is None
+        ):
             return False
-        base_rate = float(session["rate_per_hour"] or 0)
-        package_rate = float(discount_type["package_rate_per_hour"])
+        base_rate = int(session["rate_per_hour_cents"] or 0)
+        package_rate = int(discount_type["package_rate_per_hour_cents"])
         return 0 < package_rate < base_rate
     return True
 
@@ -93,19 +97,19 @@ def session_orders(session_id: int) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def session_food_total(session_id: int) -> float:
+def session_food_total(session_id: int) -> int:
     row = get_db().execute(
-        "SELECT COALESCE(SUM(subtotal), 0) AS total FROM orders WHERE session_id = ?",
+        "SELECT COALESCE(SUM(subtotal_cents), 0) AS total FROM orders WHERE session_id = ?",
         (session_id,),
     ).fetchone()
-    return float(row["total"])
+    return int(row["total"])
 
 
-def session_drink_total(session_id: int) -> float:
+def session_drink_total(session_id: int) -> int:
     db = get_db()
     row = db.execute(
         """
-        SELECT COALESCE(SUM(subtotal), 0) AS total
+        SELECT COALESCE(SUM(subtotal_cents), 0) AS total
         FROM orders
         WHERE session_id = ?
           AND (
@@ -123,7 +127,7 @@ def session_drink_total(session_id: int) -> float:
         """,
         (session_id,),
     ).fetchone()
-    return float(row["total"])
+    return int(row["total"])
 
 
 def format_hms(seconds: int) -> str:
@@ -146,12 +150,13 @@ def discount_label(discount_percent: float) -> str:
 def discount_pricing_label(
     pricing_method: str,
     discount_percent: float,
-    package_rate_per_hour: float | None = None,
+    package_rate_per_hour_cents: int | None = None,
 ) -> str:
-    if pricing_method == DISCOUNT_PRICING_PACKAGE_HOURLY and package_rate_per_hour is not None:
-        rate = float(package_rate_per_hour)
-        formatted_rate = f"{rate:.0f}" if rate.is_integer() else f"{rate:.1f}"
-        return f"包台每小時 {formatted_rate} 元"
+    if (
+        pricing_method == DISCOUNT_PRICING_PACKAGE_HOURLY
+        and package_rate_per_hour_cents is not None
+    ):
+        return f"包台每小時 {format_cents(package_rate_per_hour_cents)} 元"
     return discount_label(discount_percent)
 
 
@@ -168,18 +173,20 @@ def discount_scope_label(scope: str) -> str:
 def build_session_runtime(session: sqlite3.Row, now: datetime) -> dict:
     start_dt = datetime.fromisoformat(session["start_time"])
     elapsed_seconds = max(0, int((now - start_dt).total_seconds()))
-    elapsed_minutes, timed_table_fee = calculate_timed_charge(
-        start_dt, now, float(session["rate_per_min"] or 0)
+    elapsed_minutes, timed_table_fee_cents = calculate_timed_charge(
+        start_dt, now, int(session["rate_per_min_cents"] or 0)
     )
 
     if session["mode"] == "timed":
-        table_fee = timed_table_fee
+        table_fee_cents = timed_table_fee_cents
         timer_kind = "timed"
         timer_seconds = elapsed_seconds
         timer_text = format_hms(elapsed_seconds)
         mode_label = "計時"
     else:
-        table_fee = round(int(session["package_hours"]) * float(session["rate_per_hour"]), 2)
+        table_fee_cents = int(session["package_hours"]) * int(
+            session["rate_per_hour_cents"]
+        )
         end_dt = start_dt + timedelta(hours=int(session["package_hours"]))
         remain_seconds = int((end_dt - now).total_seconds())
         timer_kind = "package"
@@ -187,8 +194,8 @@ def build_session_runtime(session: sqlite3.Row, now: datetime) -> dict:
         timer_text = format_hms(remain_seconds)
         mode_label = "包台"
 
-    food_total = session_food_total(session["id"])
-    gross_total = round(table_fee + food_total, 2)
+    food_total_cents = session_food_total(session["id"])
+    gross_total_cents = table_fee_cents + food_total_cents
     return {
         "session": session,
         "start_dt": start_dt,
@@ -198,9 +205,9 @@ def build_session_runtime(session: sqlite3.Row, now: datetime) -> dict:
         "timer_seconds": timer_seconds,
         "timer_text": timer_text,
         "mode_label": mode_label,
-        "table_fee": table_fee,
-        "food_total": food_total,
-        "gross_total": gross_total,
+        "table_fee_cents": table_fee_cents,
+        "food_total_cents": food_total_cents,
+        "gross_total_cents": gross_total_cents,
         "orders": session_orders(session["id"]),
     }
 

@@ -29,22 +29,22 @@ def seed_demo_database(database_path: Path) -> None:
         db = get_db()
         db.execute(
             """INSERT INTO sessions
-               (table_no, mode, start_time, rate_per_min)
-               VALUES (1, 'timed', ?, 4)""",
+               (table_no, mode, start_time, rate_per_min_cents)
+               VALUES (1, 'timed', ?, 400)""",
             ((now - timedelta(minutes=47)).isoformat(timespec="seconds"),),
         )
         timed_session_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
         db.execute(
             """INSERT INTO sessions
-               (table_no, mode, start_time, package_hours, rate_per_hour)
-               VALUES (3, 'package', ?, 2, 150)""",
+               (table_no, mode, start_time, package_hours, rate_per_hour_cents)
+               VALUES (3, 'package', ?, 2, 15000)""",
             ((now - timedelta(minutes=20)).isoformat(timespec="seconds"),),
         )
         db.execute(
             """INSERT INTO orders
                (session_id, item_id, item_name, item_category_name, sugar_level,
-                ice_level, unit_price, quantity, subtotal)
-               VALUES (?, 1, '特選紅烏龍', '飲料', '微糖', '少冰', 45, 2, 90)""",
+                ice_level, unit_price_cents, quantity, subtotal_cents)
+               VALUES (?, 1, '特選紅烏龍', '飲料', '微糖', '少冰', 4500, 2, 9000)""",
             (timed_session_id,),
         )
 
@@ -56,15 +56,16 @@ def seed_demo_database(database_path: Path) -> None:
         db.executemany(
             """INSERT INTO sessions
                (table_no, mode, start_time, end_time, status, package_hours,
-                rate_per_min, rate_per_hour, table_fee, food_fee, discount_name,
-                discount_percent, discount_scope, final_total)
+                rate_per_min_cents, rate_per_hour_cents, table_fee_cents, food_fee_cents,
+                discount_name, discount_percent, discount_scope, final_total_cents)
                VALUES (?, ?, ?, ?, 'closed',
                        CASE WHEN ? = 'package' THEN 2 ELSE NULL END,
-                       CASE WHEN ? = 'timed' THEN 3 ELSE NULL END,
-                       CASE WHEN ? = 'package' THEN 150 ELSE NULL END,
+                       CASE WHEN ? = 'timed' THEN 300 ELSE NULL END,
+                       CASE WHEN ? = 'package' THEN 15000 ELSE NULL END,
                        ?, ?, '原價', 100, 'all', ?)""",
             [
-                (table_no, mode, start, end, mode, mode, mode, table_fee, food_fee, total)
+                (table_no, mode, start, end, mode, mode, mode,
+                 table_fee * 100, food_fee * 100, total * 100)
                 for table_no, mode, start, end, table_fee, food_fee, total in closed_sessions
             ],
         )
@@ -76,9 +77,9 @@ def seed_demo_database(database_path: Path) -> None:
             db.execute(
                 """INSERT INTO orders
                    (session_id, item_id, item_name, item_category_name,
-                    unit_price, quantity, subtotal)
+                    unit_price_cents, quantity, subtotal_cents)
                    VALUES (?, 1, '展示餐飲', '餐點', ?, 1, ?)""",
-                (session_id, food_fee, food_fee),
+                (session_id, food_fee * 100, food_fee * 100),
             )
 
         db.executemany(
@@ -151,13 +152,13 @@ def seed_demo_database(database_path: Path) -> None:
             )
 
         db.execute(
-            """INSERT INTO daily_cash_records (record_date, actual_revenue, note)
-               VALUES ('2026-09-17', 900, '展示資料')"""
+            """INSERT INTO daily_cash_records (record_date, actual_revenue_cents, note)
+               VALUES ('2026-09-17', 90000, '展示資料')"""
         )
         db.executemany(
-            """INSERT INTO expenses (expense_date, category, description, amount)
+            """INSERT INTO expenses (expense_date, category, description, amount_cents)
                VALUES ('2026-09-17', ?, ?, ?)""",
-            [("進貨", "飲料補貨", 180), ("設備", "球桿皮頭", 120)],
+            [("進貨", "飲料補貨", 18000), ("設備", "球桿皮頭", 12000)],
         )
         db.commit()
 

@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import re
+import sqlite3
 from datetime import date, datetime, timedelta
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
@@ -296,9 +297,15 @@ def delete_employee(employee_id: int):
 @bp.route("/shifts/<int:shift_id>/update", methods=["POST"])
 def save_shift(shift_id: int | None = None):
     db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+    except sqlite3.OperationalError:
+        flash("班表目前忙碌，請稍後重試。", "error")
+        return schedule_redirect("shifts.shifts_page")
     if shift_id is not None and not db.execute(
         "SELECT id FROM shifts WHERE id = ?", (shift_id,)
     ).fetchone():
+        db.rollback()
         flash("找不到班次。", "error")
         return schedule_redirect("shifts.shifts_page")
 
@@ -335,6 +342,7 @@ def save_shift(shift_id: int | None = None):
                 (start.isoformat(timespec="minutes"), end.isoformat(timespec="minutes"))
             )
     except (KeyError, ValueError) as exc:
+        db.rollback()
         flash(f"班表資料無效：{exc}", "error")
         return schedule_redirect("shifts.shifts_page")
 
@@ -346,6 +354,7 @@ def save_shift(shift_id: int | None = None):
             (employee_id, end, start, shift_id or 0),
         ).fetchone()
         if conflict:
+            db.rollback()
             flash(f"{employee['name']} 在 {start[:10]} 的時段已有班次，未建立任何資料。", "error")
             return schedule_redirect("shifts.shifts_page")
 

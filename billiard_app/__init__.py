@@ -7,6 +7,7 @@ from flask import Flask
 
 from .config import PROJECT_ROOT
 from .db import init_app as init_database
+from .money import format_cents
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -19,6 +20,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
         DATABASE=str(PROJECT_ROOT / "billiard.db"),
         BACKUP_ON_RESET=True,
+        BACKUP_ON_MIGRATION=True,
         MAX_CONTENT_LENGTH=1024 * 1024,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -41,6 +43,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(stats_bp)
     app.register_blueprint(reservations_bp)
     app.register_blueprint(shifts_bp)
+    app.jinja_env.filters["money"] = format_cents
 
     @app.after_request
     def add_security_headers(response):

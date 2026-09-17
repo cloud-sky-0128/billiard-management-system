@@ -1,8 +1,7 @@
 ﻿from flask import Blueprint, flash, redirect, render_template, request, url_for
 
-from math import isfinite
-
 from ..db import get_db
+from ..money import to_cents
 
 bp = Blueprint("menu", __name__)
 
@@ -78,7 +77,7 @@ def add_menu_item():
 
     try:
         category_id = int(request.form.get("category_id", "0"))
-        price = float(request.form.get("price", "0"))
+        price_cents = to_cents(request.form.get("price", "0"))
     except ValueError:
         flash("品項資料格式錯誤。", "error")
         return redirect(url_for(".menu_page"))
@@ -87,7 +86,7 @@ def add_menu_item():
         flash("品項名稱不可空白。", "error")
         return redirect(url_for(".menu_page"))
 
-    if not isfinite(price) or price <= 0:
+    if price_cents <= 0:
         flash("價格需大於 0。", "error")
         return redirect(url_for(".menu_page"))
 
@@ -100,8 +99,8 @@ def add_menu_item():
         return redirect(url_for(".menu_page"))
 
     db.execute(
-        "INSERT INTO menu_items (category_id, name, price) VALUES (?, ?, ?)",
-        (category_id, name, price),
+        "INSERT INTO menu_items (category_id, name, price_cents) VALUES (?, ?, ?)",
+        (category_id, name, price_cents),
     )
     db.commit()
 
@@ -115,7 +114,7 @@ def update_menu_item(item_id: int):
     name = request.form.get("name", "").strip()
     try:
         category_id = int(request.form.get("category_id", "0"))
-        price = float(request.form.get("price", "0"))
+        price_cents = to_cents(request.form.get("price", "0"))
     except ValueError:
         flash("品項資料格式錯誤。", "error")
         return redirect(url_for(".menu_page"))
@@ -123,7 +122,7 @@ def update_menu_item(item_id: int):
     if not name:
         flash("品項名稱不可空白。", "error")
         return redirect(url_for(".menu_page"))
-    if not isfinite(price) or price <= 0:
+    if price_cents <= 0:
         flash("價格需大於 0。", "error")
         return redirect(url_for(".menu_page"))
 
@@ -144,10 +143,10 @@ def update_menu_item(item_id: int):
     db.execute(
         """
         UPDATE menu_items
-        SET category_id = ?, name = ?, price = ?
+        SET category_id = ?, name = ?, price_cents = ?
         WHERE id = ?
         """,
-        (category_id, name, price, item_id),
+        (category_id, name, price_cents, item_id),
     )
     db.commit()
     flash("品項已更新。", "success")

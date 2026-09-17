@@ -15,7 +15,8 @@ from ..config import (
     DISCOUNT_SCOPE_TABLE_AND_DRINK,
     DISCOUNT_SCOPE_TABLE_ONLY,
 )
-from ..db import get_db, get_setting_float
+from ..db import get_db, get_setting_cents
+from ..money import format_cents, to_cents
 from ..services.billing import table_count_value
 
 bp = Blueprint("settings", __name__)
@@ -176,23 +177,27 @@ def update_rate_settings():
         int(row["table_no"]): row
         for row in db.execute("SELECT * FROM table_rates").fetchall()
     }
-    rows: list[tuple[int, float, float, int]] = []
+    rows: list[tuple[int, int, int, int]] = []
     try:
         for table_no in range(1, table_count + 1):
             existing = existing_rates.get(table_no)
             default_timed = (
-                float(existing["timed_rate_per_min"])
-                if existing else get_setting_float("timed_rate_group", 3.0)
+                int(existing["timed_rate_per_min_cents"])
+                if existing else get_setting_cents("timed_rate_group", "3.0")
             )
             default_package = (
-                float(existing["package_rate_per_hour"])
-                if existing else get_setting_float("package_hour_rate", 150)
+                int(existing["package_rate_per_hour_cents"])
+                if existing else get_setting_cents("package_hour_rate", "150")
             )
-            timed_rate = float(
-                request.form.get(f"timed_rate_{table_no}", str(default_timed))
+            timed_rate_cents = to_cents(
+                request.form.get(
+                    f"timed_rate_{table_no}", format_cents(default_timed)
+                )
             )
-            package_rate = float(
-                request.form.get(f"package_rate_{table_no}", str(default_package))
+            package_rate_cents = to_cents(
+                request.form.get(
+                    f"package_rate_{table_no}", format_cents(default_package)
+                )
             )
             enabled_key = f"package_enabled_{table_no}"
             if enabled_key in request.form:
@@ -202,13 +207,13 @@ def update_rate_settings():
             else:
                 package_enabled = True
             if (
-                not math.isfinite(timed_rate)
-                or not math.isfinite(package_rate)
-                or timed_rate <= 0
-                or package_rate <= 0
+                timed_rate_cents <= 0
+                or package_rate_cents <= 0
             ):
                 raise ValueError
-            rows.append((table_no, timed_rate, package_rate, int(package_enabled)))
+            rows.append(
+                (table_no, timed_rate_cents, package_rate_cents, int(package_enabled))
+            )
     except ValueError:
         flash("每桌的計時與包台費率都必須是大於 0 的數字。", "error")
         return redirect(url_for(".rate_settings_page"))
@@ -220,11 +225,12 @@ def update_rate_settings():
     )
     db.executemany(
         """INSERT INTO table_rates
-           (table_no, timed_rate_per_min, package_rate_per_hour, package_enabled, updated_at)
+           (table_no, timed_rate_per_min_cents, package_rate_per_hour_cents,
+            package_enabled, updated_at)
            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
            ON CONFLICT(table_no) DO UPDATE SET
-               timed_rate_per_min = excluded.timed_rate_per_min,
-               package_rate_per_hour = excluded.package_rate_per_hour,
+               timed_rate_per_min_cents = excluded.timed_rate_per_min_cents,
+               package_rate_per_hour_cents = excluded.package_rate_per_hour_cents,
                package_enabled = excluded.package_enabled,
                updated_at = CURRENT_TIMESTAMP""",
         rows,
@@ -261,13 +267,15 @@ def discount_form_data() -> dict:
     }:
         raise ValueError("折扣套用範圍無效。")
 
-    package_rate_per_hour = None
+    package_rate_per_hour_cents = None
     if pricing_method == DISCOUNT_PRICING_PACKAGE_HOURLY:
         try:
-            package_rate_per_hour = float(request.form.get("package_rate_per_hour", ""))
+            package_rate_per_hour_cents = to_cents(
+                request.form.get("package_rate_per_hour", "")
+            )
         except ValueError as exc:
             raise ValueError("包台優惠價格式錯誤。") from exc
-        if not math.isfinite(package_rate_per_hour) or package_rate_per_hour <= 0:
+        if package_rate_per_hour_cents <= 0:
             raise ValueError("包台每小時優惠價必須大於 0。")
         discount_percent = 100.0
         applicable_mode = DISCOUNT_MODE_PACKAGE
@@ -290,7 +298,7 @@ def discount_form_data() -> dict:
         "name": name,
         "pricing_method": pricing_method,
         "discount_percent": discount_percent,
-        "package_rate_per_hour": package_rate_per_hour,
+        "package_rate_per_hour_cents": package_rate_per_hour_cents,
         "applicable_mode": applicable_mode,
         "discount_scope": scope,
         "start_time": start_time,
@@ -315,11 +323,11 @@ def add_discount_type():
     elif existing:
         db.execute(
             """UPDATE discount_types SET pricing_method = ?, discount_percent = ?,
-               package_rate_per_hour = ?, applicable_mode = ?, discount_scope = ?,
+               package_rate_per_hour_cents = ?, applicable_mode = ?, discount_scope = ?,
                start_time = ?, end_time = ?, is_active = 1 WHERE id = ?""",
             (
                 values["pricing_method"], values["discount_percent"],
-                values["package_rate_per_hour"], values["applicable_mode"],
+                values["package_rate_per_hour_cents"], values["applicable_mode"],
                 values["discount_scope"], values["start_time"], values["end_time"],
                 existing["id"],
             ),
@@ -329,12 +337,12 @@ def add_discount_type():
     else:
         db.execute(
             """INSERT INTO discount_types
-               (name, pricing_method, discount_percent, package_rate_per_hour,
+               (name, pricing_method, discount_percent, package_rate_per_hour_cents,
                 applicable_mode, discount_scope, start_time, end_time)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 values["name"], values["pricing_method"], values["discount_percent"],
-                values["package_rate_per_hour"], values["applicable_mode"],
+                values["package_rate_per_hour_cents"], values["applicable_mode"],
                 values["discount_scope"], values["start_time"], values["end_time"],
             ),
         )
@@ -361,11 +369,11 @@ def update_discount_type(discount_id: int):
         return redirect(url_for(".rate_settings_page"))
     result = db.execute(
         """UPDATE discount_types SET name = ?, pricing_method = ?, discount_percent = ?,
-           package_rate_per_hour = ?, applicable_mode = ?, discount_scope = ?,
+           package_rate_per_hour_cents = ?, applicable_mode = ?, discount_scope = ?,
            start_time = ?, end_time = ? WHERE id = ? AND is_active = 1""",
         (
             values["name"], values["pricing_method"], values["discount_percent"],
-            values["package_rate_per_hour"], values["applicable_mode"],
+            values["package_rate_per_hour_cents"], values["applicable_mode"],
             values["discount_scope"], values["start_time"], values["end_time"],
             discount_id,
         ),

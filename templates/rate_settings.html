@@ -22,8 +22,8 @@
           {% for rate in table_rates %}
           <tr>
             <td><strong>{{ rate.table_no }} 號桌</strong></td>
-            <td><input type="number" name="timed_rate_{{ rate.table_no }}" step="0.1" min="0.1" value="{{ rate.timed_rate_per_min }}" required></td>
-            <td><input type="number" name="package_rate_{{ rate.table_no }}" step="1" min="1" value="{{ rate.package_rate_per_hour }}" required></td>
+            <td><input type="number" name="timed_rate_{{ rate.table_no }}" step="0.01" min="0.01" value="{{ rate.timed_rate_per_min_cents|money }}" required></td>
+            <td><input type="number" name="package_rate_{{ rate.table_no }}" step="0.01" min="0.01" value="{{ rate.package_rate_per_hour_cents|money }}" required></td>
             <td>
               <input type="hidden" name="package_enabled_{{ rate.table_no }}" value="0">
               <label class="checkbox-inline"><input type="checkbox" name="package_enabled_{{ rate.table_no }}" value="1" {% if rate.package_enabled %}checked{% endif %}>啟用</label>
@@ -54,7 +54,7 @@
       </select>
     </label>
     <label class="discount-value-field js-percent-field">收費百分比 <input type="number" name="discount_percent" min="0.1" max="100" step="0.1" value="90" required><small class="muted">90 表示 9 折</small></label>
-    <label class="discount-value-field js-package-field">包台優惠價（元／小時） <input type="number" name="package_rate_per_hour" min="1" step="1" placeholder="例如：120"><small class="muted">只套用球檯費</small></label>
+    <label class="discount-value-field js-package-field">包台優惠價（元／小時） <input type="number" name="package_rate_per_hour" min="0.01" step="0.01" placeholder="例如：120"><small class="muted">只套用球檯費</small></label>
     <label class="discount-scope-field js-scope-field">套用範圍
       <select name="discount_scope">
         {% for value, label in discount_scope_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
@@ -87,7 +87,7 @@
           </select>
         </label>
         <label class="discount-value-field js-percent-field">收費百分比 <input type="number" name="discount_percent" min="0.1" max="100" step="0.1" value="{{ discount.discount_percent }}"></label>
-        <label class="discount-value-field js-package-field">包台優惠價（元／小時） <input type="number" name="package_rate_per_hour" min="1" step="1" value="{{ discount.package_rate_per_hour or '' }}"></label>
+        <label class="discount-value-field js-package-field">包台優惠價（元／小時） <input type="number" name="package_rate_per_hour" min="0.01" step="0.01" value="{{ discount.package_rate_per_hour_cents|money if discount.package_rate_per_hour_cents is not none else '' }}"></label>
         <label class="discount-scope-field js-scope-field">套用範圍
           <select name="discount_scope">
             {% for value, label in discount_scope_options %}<option value="{{ value }}" {% if value == discount.discount_scope %}selected{% endif %}>{{ label }}</option>{% endfor %}

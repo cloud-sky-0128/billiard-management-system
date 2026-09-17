@@ -139,13 +139,13 @@ erDiagram
         INTEGER id PK
         INTEGER category_id FK
         TEXT name
-        REAL price
+        INTEGER price_cents
         INTEGER is_active
     }
     table_rates {
         INTEGER table_no PK
-        REAL timed_rate_per_min
-        REAL package_rate_per_hour
+        INTEGER timed_rate_per_min_cents
+        INTEGER package_rate_per_hour_cents
         INTEGER package_enabled
     }
     discount_types {
@@ -153,7 +153,7 @@ erDiagram
         TEXT name UK
         TEXT pricing_method
         REAL discount_percent
-        REAL package_rate_per_hour
+        INTEGER package_rate_per_hour_cents
         TEXT applicable_mode
         TEXT discount_scope
     }
@@ -164,9 +164,9 @@ erDiagram
         TEXT start_time
         TEXT end_time
         TEXT status
-        REAL rate_per_min
-        REAL rate_per_hour
-        REAL final_total
+        INTEGER rate_per_min_cents
+        INTEGER rate_per_hour_cents
+        INTEGER final_total_cents
         INTEGER discount_type_id FK
     }
     orders {
@@ -175,9 +175,9 @@ erDiagram
         INTEGER item_id
         TEXT item_name
         TEXT item_category_name
-        REAL unit_price
+        INTEGER unit_price_cents
         INTEGER quantity
-        REAL subtotal
+        INTEGER subtotal_cents
     }
     reservations {
         INTEGER id PK
@@ -218,7 +218,7 @@ erDiagram
     }
     daily_cash_records {
         TEXT record_date PK
-        REAL actual_revenue
+        INTEGER actual_revenue_cents
         TEXT note
     }
     expenses {
@@ -226,7 +226,7 @@ erDiagram
         TEXT expense_date
         TEXT category
         TEXT description
-        REAL amount
+        INTEGER amount_cents
     }
     settings {
         TEXT key PK
@@ -252,7 +252,7 @@ sequenceDiagram
     Web->>DB: 保存品名、分類、單價與數量快照
     Staff->>Web: 選擇優惠並結帳
     Web->>Billing: 計算桌費、餐飲、折扣與應收
-    Web->>DB: 將 session 關閉並保存 final_total
+    Web->>DB: 將 session 關閉並保存 final_total_cents
     DB-->>Web: 提供歷史帳務與營業統計
 ```
 
@@ -260,31 +260,33 @@ sequenceDiagram
 
 - 開台時將當下的每分鐘或每小時費率寫入 `sessions`。
 - 點餐時將品名、分類、單價與小計寫入 `orders`。
-- 結帳時保存折扣名稱、折扣方式、折扣金額與 `final_total`。
+- 結帳時保存折扣名稱、折扣方式、折扣金額與 `final_total_cents`。
 - 即使之後修改菜單、費率或優惠，歷史營收仍能按照當時資料還原。
+- 所有金額皆以整數分（`*_cents`）保存，輸入時使用 `Decimal` 四捨五入，避免浮點數累積誤差。
 
 ## 資料完整性設計
 
 - `CHECK` constraints 限制費率、價格、狀態與時間格式。
 - SQLite foreign keys 維護菜單、訂單、員工與班別關係。
 - Partial unique index 保證同一桌最多只有一筆 `active` session。
-- 預約與排班在寫入前執行時段重疊檢查。
+- 預約與排班以 `BEGIN IMMEDIATE` 將時段重疊檢查與寫入包在同一筆 transaction，避免並行請求重複建立。
 - 測試資料清除使用 transaction，並在刪除前以 SQLite backup API 建立完整備份。
 
 ## 測試
 
 ```bash
-python -m unittest discover -v
+python -m unittest discover -s tests -v
 ```
 
-目前共有 **22 項自動化測試**，測試使用暫存 SQLite，不會修改正式的 `billiard.db`。涵蓋範圍包括：
+目前共有 **25 項自動化測試**，測試使用暫存 SQLite，不會修改正式的 `billiard.db`。涵蓋範圍包括：
 
 - 開台、點餐、折扣與結帳完整流程。
 - 同桌重複開台的 application 與 database 雙層保護。
 - 1 秒、60 秒及 61 秒的分鐘進位邊界。
 - 包台到期後加時及更新倒數與費用。
 - 跨午夜優惠與跨日班別。
-- 預約及排班衝突的原子性。
+- 預約及排班衝突的原子性與並行請求測試。
+- 整數分儲存、十進位四捨五入與百分比折扣測試。
 - 菜單、班別、員工、行事曆與財務操作。
 - 重複結帳不會改寫已完成交易。
 - 測試資料清除會保留系統設定並建立備份。
@@ -316,6 +318,7 @@ python app.py
 ```
 
 瀏覽器開啟 <http://127.0.0.1:5000>。終端機需要保持執行；第一次啟動會自動建立 `billiard.db`。
+若偵測到舊版金額欄位，啟動時會先將原資料庫備份到 `backups/`，再把金額安全遷移為整數分欄位。
 
 ### 建立展示資料
 
@@ -335,20 +338,21 @@ python scripts/seed_demo.py demo.db
 | SQLite | 單一場館、低併發情境部署簡單，且支援 transaction 與 constraint |
 | Service layer | 將計費與排程邏輯從 HTTP route 抽離，方便重用及邊界測試 |
 | Server-side snapshots | 保存交易當下資料，避免設定變更破壞歷史帳務 |
+| Integer cents + Decimal | 金額以整數分保存，避免 SQLite `REAL` 與 Python `float` 的精度誤差 |
 
 ## 面試可說明的技術亮點
 
-1. **資料一致性：** 不只在 Flask route 檢查重複開台，也使用 partial unique index 從資料庫層阻止競態條件。
-2. **歷史資料設計：** 訂單保存 `item_name`、`item_category_name`、`unit_price`，session 保存費率與折扣快照。
+1. **資料一致性：** 重複開台使用 partial unique index；預約與排班用 immediate transaction 將查核及寫入原子化，阻止競態條件。
+2. **歷史資料設計：** 訂單保存 `item_name`、`item_category_name`、`unit_price_cents`，session 保存費率與折扣快照。
 3. **複雜時間規則：** 支援包台倒數、分鐘進位、跨午夜優惠及隔日凌晨班別衝突判斷。
 4. **安全資料清除：** 使用 transaction、多重確認、開台檢查與刪除前備份降低誤刪風險。
-5. **可測試架構：** Application Factory 可注入暫存 database，22 項 regression tests 不會污染正式資料。
+5. **可測試架構：** Application Factory 可注入暫存 database，25 項 regression tests 不會污染正式資料。
+6. **金額精度：** schema 使用整數分，表單金額由 `Decimal` 轉換，並提供自動備份的舊資料遷移。
 
 ## 已知限制與後續規劃
 
 - 尚未加入登入、角色權限與 CSRF 保護，不應直接暴露於公開網路。
 - `app.py` 使用 Flask development server；正式部署應改用 Waitress 或其他 WSGI server。
-- 金額目前使用 SQLite `REAL` 與 Python `float`，未來將遷移成整數最小單位或 `Decimal`。
 - SQLite 適合目前的單店低併發情境；若擴充多分店或多機部署，應評估 PostgreSQL。
 - 正式環境必須透過 `SECRET_KEY` 環境變數設定不可預測的金鑰，並建立定期異地備份。
 

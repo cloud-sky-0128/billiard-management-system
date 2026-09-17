@@ -12,19 +12,19 @@
 <section class="four-col">
   <article class="panel">
     <h3>球檯營收</h3>
-    <p class="big-number">{{ table_revenue|int }}</p>
+    <p class="big-number">{{ table_revenue_cents|money }}</p>
   </article>
   <article class="panel">
     <h3>餐點/飲料營收</h3>
-    <p class="big-number">{{ food_revenue|int }}</p>
+    <p class="big-number">{{ food_revenue_cents|money }}</p>
   </article>
   <article class="panel">
     <h3>原始總額</h3>
-    <p class="big-number">{{ gross_total|int }}</p>
+    <p class="big-number">{{ gross_total_cents|money }}</p>
   </article>
   <article class="panel">
     <h3>折扣後實收</h3>
-    <p class="big-number">{{ net_total|int }}</p>
+    <p class="big-number">{{ net_total_cents|money }}</p>
   </article>
 </section>
 
@@ -62,11 +62,11 @@
         <td>{{ row.end_time }}</td>
         <td>{{ row.table_no }}</td>
         <td>{{ row.mode_label }}</td>
-        <td>{{ row.table_fee|int }}</td>
-        <td>{{ row.food_fee|int }}</td>
+        <td>{{ row.table_fee_cents|money }}</td>
+        <td>{{ row.food_fee_cents|money }}</td>
         <td>{{ row.discount_name }} · {{ row.discount_label }}</td>
         <td>{{ row.discount_scope_label }}</td>
-        <td>{{ row.final_total|int }}</td>
+        <td>{{ row.final_total_cents|money }}</td>
       </tr>
       {% else %}
       <tr>

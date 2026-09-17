@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import date, datetime, timedelta
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
@@ -203,11 +204,6 @@ def delete_calendar_item(item_id: int):
 @bp.route("/reservations/<int:reservation_id>", methods=["POST"])
 def save_reservation(reservation_id: int | None = None):
     db = get_db()
-    if reservation_id is not None and not db.execute(
-        "SELECT id FROM reservations WHERE id = ? AND status = 'active'", (reservation_id,)
-    ).fetchone():
-        flash("找不到可修改的預約。", "error")
-        return schedule_redirect("reservations.calendar_page")
     try:
         table_no = int(request.form["table_no"])
         guest_name = request.form["guest_name"].strip()
@@ -233,38 +229,51 @@ def save_reservation(reservation_id: int | None = None):
         )
         for week in range(repeat_weeks)
     ]
-    for occurrence_start, occurrence_end in occurrences:
-        conflict = db.execute(
-            """SELECT id FROM reservations
-               WHERE table_no = ? AND status = 'active'
-                 AND start_time < ? AND end_time > ? AND id != ?
-               LIMIT 1""",
-            (table_no, occurrence_end, occurrence_start, reservation_id or 0),
-        ).fetchone()
-        if conflict:
-            flash(
-                f"{table_no} 號桌在 {occurrence_start[:10]} 的時段已有預約，未建立任何資料。",
-                "error",
-            )
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        if reservation_id is not None and not db.execute(
+            "SELECT id FROM reservations WHERE id = ? AND status = 'active'", (reservation_id,)
+        ).fetchone():
+            db.rollback()
+            flash("找不到可修改的預約。", "error")
             return schedule_redirect("reservations.calendar_page")
+        for occurrence_start, occurrence_end in occurrences:
+            conflict = db.execute(
+                """SELECT id FROM reservations
+                   WHERE table_no = ? AND status = 'active'
+                     AND start_time < ? AND end_time > ? AND id != ?
+                   LIMIT 1""",
+                (table_no, occurrence_end, occurrence_start, reservation_id or 0),
+            ).fetchone()
+            if conflict:
+                db.rollback()
+                flash(
+                    f"{table_no} 號桌在 {occurrence_start[:10]} 的時段已有預約，未建立任何資料。",
+                    "error",
+                )
+                return schedule_redirect("reservations.calendar_page")
 
-    if reservation_id is None:
-        db.executemany(
-            """INSERT INTO reservations
-               (table_no, guest_name, phone, event_type, start_time, end_time, note)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            [
-                (table_no, guest_name, phone, event_type, occurrence_start, occurrence_end, note)
-                for occurrence_start, occurrence_end in occurrences
-            ],
-        )
-    else:
-        db.execute(
-            """UPDATE reservations SET table_no = ?, guest_name = ?, phone = ?,
-               event_type = ?, start_time = ?, end_time = ?, note = ? WHERE id = ?""",
-            (table_no, guest_name, phone, event_type, start, end, note, reservation_id),
-        )
-    db.commit()
+        if reservation_id is None:
+            db.executemany(
+                """INSERT INTO reservations
+                   (table_no, guest_name, phone, event_type, start_time, end_time, note)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (table_no, guest_name, phone, event_type, occurrence_start, occurrence_end, note)
+                    for occurrence_start, occurrence_end in occurrences
+                ],
+            )
+        else:
+            db.execute(
+                """UPDATE reservations SET table_no = ?, guest_name = ?, phone = ?,
+                   event_type = ?, start_time = ?, end_time = ?, note = ? WHERE id = ?""",
+                (table_no, guest_name, phone, event_type, start, end, note, reservation_id),
+            )
+        db.commit()
+    except sqlite3.Error:
+        db.rollback()
+        flash("預約儲存失敗，請稍後重試。", "error")
+        return schedule_redirect("reservations.calendar_page")
     flash(f"預約已儲存，共 {repeat_weeks} 筆。", "success")
     return schedule_redirect("reservations.calendar_page")
 

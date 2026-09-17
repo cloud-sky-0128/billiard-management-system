@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from billiard_app import create_app
 from billiard_app.db import get_db
+from billiard_app.money import format_cents, percentage_of_cents, to_cents
 from billiard_app.services.billing import (
     build_session_runtime,
     calculate_timed_charge,
@@ -84,15 +85,28 @@ class BilliardAppTestCase(unittest.TestCase):
     def test_timed_charge_rounds_up_at_minute_boundaries(self):
         start = datetime(2026, 9, 17, 12, 0, 0)
         cases = [
-            (timedelta(seconds=1), 1, 4.0),
-            (timedelta(seconds=60), 1, 4.0),
-            (timedelta(seconds=61), 2, 8.0),
+            (timedelta(seconds=1), 1, 400),
+            (timedelta(seconds=60), 1, 400),
+            (timedelta(seconds=61), 2, 800),
         ]
         for elapsed, expected_minutes, expected_fee in cases:
             with self.subTest(elapsed=elapsed):
-                minutes, fee = calculate_timed_charge(start, start + elapsed, 4.0)
+                minutes, fee = calculate_timed_charge(start, start + elapsed, 400)
                 self.assertEqual(minutes, expected_minutes)
                 self.assertEqual(fee, expected_fee)
+
+    def test_money_uses_integer_cents_and_decimal_rounding(self):
+        self.assertEqual(to_cents("7.50"), 750)
+        self.assertEqual(to_cents("1.005"), 101)
+        self.assertEqual(percentage_of_cents(755, "90"), 680)
+        self.assertEqual(format_cents(750), "7.5")
+        with self.app.app_context():
+            columns = {
+                row["name"]: row["type"]
+                for row in get_db().execute("PRAGMA table_info(sessions)")
+            }
+        self.assertEqual(columns["final_total_cents"], "INTEGER")
+        self.assertNotIn("final_total", columns)
 
     def test_expired_package_session_can_be_extended(self):
         self.client.post(
@@ -127,7 +141,7 @@ class BilliardAppTestCase(unittest.TestCase):
                 "SELECT * FROM sessions WHERE id = ?", (session_id,)
             ).fetchone()
             runtime = build_session_runtime(session, datetime.now())
-        self.assertEqual(runtime["table_fee"], 300.0)
+        self.assertEqual(runtime["table_fee_cents"], 30000)
         self.assertGreater(runtime["timer_seconds"], 25 * 60)
         self.assertLess(runtime["timer_seconds"], 35 * 60)
 
@@ -160,7 +174,7 @@ class BilliardAppTestCase(unittest.TestCase):
             before = tuple(
                 get_db()
                 .execute(
-                    "SELECT end_time, table_fee, final_total FROM sessions WHERE id = ?",
+                    "SELECT end_time, table_fee_cents, final_total_cents FROM sessions WHERE id = ?",
                     (session_id,),
                 )
                 .fetchone()
@@ -176,7 +190,7 @@ class BilliardAppTestCase(unittest.TestCase):
             after = tuple(
                 get_db()
                 .execute(
-                    "SELECT end_time, table_fee, final_total FROM sessions WHERE id = ?",
+                    "SELECT end_time, table_fee_cents, final_total_cents FROM sessions WHERE id = ?",
                     (session_id,),
                 )
                 .fetchone()
@@ -284,8 +298,8 @@ class BilliardAppTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
-            self.db_value("SELECT timed_rate_per_min FROM table_rates WHERE table_no = 1"),
-            7.5,
+            self.db_value("SELECT timed_rate_per_min_cents FROM table_rates WHERE table_no = 1"),
+            750,
         )
         self.assertEqual(
             self.db_value("SELECT package_enabled FROM table_rates WHERE table_no = 2"), 0
@@ -299,8 +313,8 @@ class BilliardAppTestCase(unittest.TestCase):
             "SELECT id FROM sessions WHERE table_no = 1 AND status = 'active'"
         )
         self.assertEqual(
-            self.db_value("SELECT rate_per_min FROM sessions WHERE id = ?", (session_id,)),
-            7.5,
+            self.db_value("SELECT rate_per_min_cents FROM sessions WHERE id = ?", (session_id,)),
+            750,
         )
         self.client.post(
             "/sessions/start",
@@ -366,12 +380,12 @@ class BilliardAppTestCase(unittest.TestCase):
             90,
         )
         self.assertEqual(
-            self.db_value("SELECT discount_amount FROM sessions WHERE id = ?", (session_id,)),
-            0.75,
+            self.db_value("SELECT discount_amount_cents FROM sessions WHERE id = ?", (session_id,)),
+            75,
         )
         self.assertEqual(
-            self.db_value("SELECT final_total FROM sessions WHERE id = ?", (session_id,)),
-            6.75,
+            self.db_value("SELECT final_total_cents FROM sessions WHERE id = ?", (session_id,)),
+            675,
         )
         self.client.post(
             "/sessions/start",
@@ -379,9 +393,9 @@ class BilliardAppTestCase(unittest.TestCase):
         )
         self.assertEqual(
             self.db_value(
-                "SELECT rate_per_hour FROM sessions WHERE table_no = 1 AND status = 'active'"
+                "SELECT rate_per_hour_cents FROM sessions WHERE table_no = 1 AND status = 'active'"
             ),
-            220,
+            22000,
         )
         package_session_id = self.db_value(
             "SELECT id FROM sessions WHERE table_no = 1 AND status = 'active'"
@@ -406,24 +420,24 @@ class BilliardAppTestCase(unittest.TestCase):
         )
         self.assertEqual(
             self.db_value(
-                "SELECT discount_package_rate_per_hour FROM sessions WHERE id = ?",
+                "SELECT discount_package_rate_per_hour_cents FROM sessions WHERE id = ?",
                 (package_session_id,),
             ),
-            120,
+            12000,
         )
         self.assertEqual(
-            self.db_value("SELECT table_fee FROM sessions WHERE id = ?", (package_session_id,)),
-            440,
+            self.db_value("SELECT table_fee_cents FROM sessions WHERE id = ?", (package_session_id,)),
+            44000,
         )
         self.assertEqual(
             self.db_value(
-                "SELECT discount_amount FROM sessions WHERE id = ?", (package_session_id,)
+                "SELECT discount_amount_cents FROM sessions WHERE id = ?", (package_session_id,)
             ),
-            200,
+            20000,
         )
         self.assertEqual(
-            self.db_value("SELECT final_total FROM sessions WHERE id = ?", (package_session_id,)),
-            240,
+            self.db_value("SELECT final_total_cents FROM sessions WHERE id = ?", (package_session_id,)),
+            24000,
         )
         stats_page = self.client.get(
             f"/stats?date={date.today().isoformat()}"
@@ -465,6 +479,76 @@ class BilliardAppTestCase(unittest.TestCase):
         conflicting = dict(booking, date="2026-09-13", repeat_weeks="2")
         self.client.post("/reservations", data=conflicting)
         self.assertEqual(self.db_value("SELECT COUNT(*) FROM reservations"), 3)
+
+    def test_concurrent_reservations_cannot_double_book_a_table(self):
+        barrier = threading.Barrier(3)
+        responses = []
+        booking = {
+            "date": "2026-11-10", "table_no": "6", "event_type": "reservation",
+            "guest_name": "Concurrent Guest", "phone": "", "start_time": "18:00",
+            "end_time": "20:00", "note": "", "repeat_weeks": "1",
+        }
+
+        def create_booking():
+            with self.app.test_client() as client:
+                barrier.wait(timeout=3)
+                responses.append(client.post("/reservations", data=booking))
+
+        threads = [threading.Thread(target=create_booking) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        barrier.wait(timeout=3)
+        for thread in threads:
+            thread.join(timeout=5)
+
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual([response.status_code for response in responses], [302, 302])
+        self.assertEqual(
+            self.db_value(
+                """SELECT COUNT(*) FROM reservations
+                   WHERE table_no = 6 AND start_time = '2026-11-10T18:00'"""
+            ),
+            1,
+        )
+
+    def test_concurrent_shifts_cannot_overlap_for_an_employee(self):
+        self.client.post("/shifts/employees/add", data={"name": "Concurrent Staff"})
+        employee_id = self.db_value(
+            "SELECT id FROM employees WHERE name = 'Concurrent Staff'"
+        )
+        shift_type_id = self.db_value(
+            "SELECT id FROM shift_types WHERE is_active = 1 ORDER BY sort_order, id LIMIT 1"
+        )
+        barrier = threading.Barrier(3)
+        responses = []
+        shift = {
+            "dates": ["2026-11-11"], "employee_id": str(employee_id),
+            "shift_type_id": str(shift_type_id), "start_time": "09:00",
+            "end_time": "13:00", "note": "",
+        }
+
+        def create_shift():
+            with self.app.test_client() as client:
+                barrier.wait(timeout=3)
+                responses.append(client.post("/shifts/add", data=shift))
+
+        threads = [threading.Thread(target=create_shift) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        barrier.wait(timeout=3)
+        for thread in threads:
+            thread.join(timeout=5)
+
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual([response.status_code for response in responses], [302, 302])
+        self.assertEqual(
+            self.db_value(
+                """SELECT COUNT(*) FROM shifts
+                   WHERE employee_id = ? AND start_time = '2026-11-11T09:00'""",
+                (employee_id,),
+            ),
+            1,
+        )
 
     def test_calendar_items_support_dated_events_and_unscheduled_todos(self):
         dated = {

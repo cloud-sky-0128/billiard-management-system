@@ -32,7 +32,7 @@
         {% endfor %}
       </select>
       <input type="text" name="name" placeholder="品項名稱" required>
-      <input type="number" name="price" min="1" step="1" placeholder="價格" required>
+      <input type="number" name="price" min="0.01" step="0.01" placeholder="價格" required>
       <button type="submit">新增品項</button>
     </form>
   </article>
@@ -63,7 +63,7 @@
           <input type="text" name="name" value="{{ item.name }}" form="update-item-{{ item.id }}" required>
         </td>
         <td>
-          <input type="number" name="price" min="1" step="1" value="{{ item.price|int }}" form="update-item-{{ item.id }}" required>
+          <input type="number" name="price" min="0.01" step="0.01" value="{{ item.price_cents|money }}" form="update-item-{{ item.id }}" required>
         </td>
         <td>
           <div class="action-row">

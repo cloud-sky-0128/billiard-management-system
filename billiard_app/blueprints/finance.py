@@ -3,12 +3,12 @@ from __future__ import annotations
 import calendar
 import csv
 import io
-import math
 from datetime import date, timedelta
 
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
 
 from ..db import get_db
+from ..money import format_cents, to_cents
 
 bp = Blueprint("finance", __name__)
 
@@ -29,26 +29,27 @@ def month_summary(month: date, following: date) -> dict:
     db = get_db()
     system_rows = db.execute(
         """SELECT SUBSTR(end_time, 1, 10) AS day,
-                  SUM(CASE WHEN final_total > 0 THEN final_total
-                           ELSE table_fee + food_fee - discount_amount END) AS total
+                  SUM(CASE WHEN final_total_cents > 0 THEN final_total_cents
+                           ELSE table_fee_cents + food_fee_cents - discount_amount_cents
+                      END) AS total_cents
            FROM sessions
            WHERE status = 'closed' AND end_time >= ? AND end_time < ?
            GROUP BY day""",
         (month.isoformat(), following.isoformat()),
     ).fetchall()
     cash_rows = db.execute(
-        """SELECT record_date, actual_revenue, note FROM daily_cash_records
+        """SELECT record_date, actual_revenue_cents, note FROM daily_cash_records
            WHERE record_date >= ? AND record_date < ?""",
         (month.isoformat(), following.isoformat()),
     ).fetchall()
     expense_rows = db.execute(
-        """SELECT id, expense_date, category, description, amount FROM expenses
+        """SELECT id, expense_date, category, description, amount_cents FROM expenses
            WHERE expense_date >= ? AND expense_date < ?
            ORDER BY expense_date, id""",
         (month.isoformat(), following.isoformat()),
     ).fetchall()
 
-    system = {row["day"]: float(row["total"] or 0) for row in system_rows}
+    system = {row["day"]: int(row["total_cents"] or 0) for row in system_rows}
     cash = {row["record_date"]: row for row in cash_rows}
     expenses: dict[str, list] = {}
     for row in expense_rows:
@@ -59,33 +60,46 @@ def month_summary(month: date, following: date) -> dict:
     for day_number in range(1, days + 1):
         day = date(month.year, month.month, day_number).isoformat()
         cash_row = cash.get(day)
-        actual = float(cash_row["actual_revenue"]) if cash_row and cash_row["actual_revenue"] is not None else None
+        actual_cents = (
+            int(cash_row["actual_revenue_cents"])
+            if cash_row and cash_row["actual_revenue_cents"] is not None
+            else None
+        )
         day_expenses = expenses.get(day, [])
-        expense_total = sum(float(item["amount"]) for item in day_expenses)
+        expense_total_cents = sum(int(item["amount_cents"]) for item in day_expenses)
         rows.append(
             {
                 "date": day,
-                "system_revenue": system.get(day, 0.0),
-                "actual_revenue": actual,
+                "system_revenue_cents": system.get(day, 0),
+                "actual_revenue_cents": actual_cents,
                 "cash_note": cash_row["note"] if cash_row else "",
                 "expenses": day_expenses,
-                "expense_total": expense_total,
-                "net": actual - expense_total if actual is not None else None,
+                "expense_total_cents": expense_total_cents,
+                "net_cents": (
+                    actual_cents - expense_total_cents
+                    if actual_cents is not None
+                    else None
+                ),
             }
         )
 
-    actual_total = sum(row["actual_revenue"] for row in rows if row["actual_revenue"] is not None)
-    expense_total = sum(row["expense_total"] for row in rows)
+    actual_total_cents = sum(
+        row["actual_revenue_cents"]
+        for row in rows
+        if row["actual_revenue_cents"] is not None
+    )
+    expense_total_cents = sum(row["expense_total_cents"] for row in rows)
     missing_actual_days = sum(
         1 for row in rows
-        if row["actual_revenue"] is None and (row["system_revenue"] > 0 or row["expense_total"] > 0)
+        if row["actual_revenue_cents"] is None
+        and (row["system_revenue_cents"] > 0 or row["expense_total_cents"] > 0)
     )
     return {
         "rows": rows,
-        "system_total": sum(row["system_revenue"] for row in rows),
-        "actual_total": actual_total,
-        "expense_total": expense_total,
-        "net_total": actual_total - expense_total,
+        "system_total_cents": sum(row["system_revenue_cents"] for row in rows),
+        "actual_total_cents": actual_total_cents,
+        "expense_total_cents": expense_total_cents,
+        "net_total_cents": actual_total_cents - expense_total_cents,
         "missing_actual_days": missing_actual_days,
     }
 
@@ -120,21 +134,22 @@ def save_actual_revenue():
     note = request.form.get("note", "").strip()
     try:
         day = date.fromisoformat(record_date)
-        amount = float(request.form["actual_revenue"])
-        if not math.isfinite(amount) or amount < 0:
+        amount_cents = to_cents(request.form["actual_revenue"])
+        if amount_cents < 0:
             raise ValueError("實收不可小於 0。")
     except (KeyError, ValueError) as exc:
         flash(f"實收資料無效：{exc}", "error")
         return redirect(url_for(".finance_page"))
     db = get_db()
     db.execute(
-        """INSERT INTO daily_cash_records (record_date, actual_revenue, note, updated_at)
+        """INSERT INTO daily_cash_records
+           (record_date, actual_revenue_cents, note, updated_at)
            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
            ON CONFLICT(record_date) DO UPDATE SET
-             actual_revenue = excluded.actual_revenue,
+             actual_revenue_cents = excluded.actual_revenue_cents,
              note = excluded.note,
              updated_at = CURRENT_TIMESTAMP""",
-        (day.isoformat(), amount, note),
+        (day.isoformat(), amount_cents, note),
     )
     db.commit()
     flash("當日實收已儲存。", "success")
@@ -148,8 +163,8 @@ def add_expense():
     description = request.form.get("description", "").strip()
     try:
         day = date.fromisoformat(expense_date)
-        amount = float(request.form["amount"])
-        if not math.isfinite(amount) or amount <= 0:
+        amount_cents = to_cents(request.form["amount"])
+        if amount_cents <= 0:
             raise ValueError("支出金額必須大於 0。")
         if category not in EXPENSE_CATEGORIES:
             raise ValueError("支出分類無效。")
@@ -158,8 +173,10 @@ def add_expense():
         return redirect(url_for(".finance_page"))
     db = get_db()
     db.execute(
-        "INSERT INTO expenses (expense_date, category, description, amount) VALUES (?, ?, ?, ?)",
-        (day.isoformat(), category, description, amount),
+        """INSERT INTO expenses
+           (expense_date, category, description, amount_cents)
+           VALUES (?, ?, ?, ?)""",
+        (day.isoformat(), category, description, amount_cents),
     )
     db.commit()
     flash("支出已新增。", "success")
@@ -189,20 +206,26 @@ def export_finance():
     writer.writerow(["日期", "系統營收", "實際實收", "支出", "支出備註", "收支淨額"])
     for row in summary["rows"]:
         notes = "；".join(
-            f"{item['category']}：{item['description'] or '無備註'} ({float(item['amount']):.0f})"
+            f"{item['category']}：{item['description'] or '無備註'} "
+            f"({format_cents(item['amount_cents'])})"
             for item in row["expenses"]
         )
         writer.writerow(
             [
-                row["date"], f"{row['system_revenue']:.0f}",
-                "" if row["actual_revenue"] is None else f"{row['actual_revenue']:.0f}",
-                f"{row['expense_total']:.0f}", notes,
-                "" if row["net"] is None else f"{row['net']:.0f}",
+                row["date"], format_cents(row["system_revenue_cents"]),
+                "" if row["actual_revenue_cents"] is None
+                else format_cents(row["actual_revenue_cents"]),
+                format_cents(row["expense_total_cents"]), notes,
+                "" if row["net_cents"] is None else format_cents(row["net_cents"]),
             ]
         )
     writer.writerow([])
-    writer.writerow(["月總計", f"{summary['system_total']:.0f}", f"{summary['actual_total']:.0f}",
-                     f"{summary['expense_total']:.0f}", "", f"{summary['net_total']:.0f}"])
+    writer.writerow([
+        "月總計", format_cents(summary["system_total_cents"]),
+        format_cents(summary["actual_total_cents"]),
+        format_cents(summary["expense_total_cents"]), "",
+        format_cents(summary["net_total_cents"]),
+    ])
     filename = f"finance-{month.strftime('%Y-%m')}.csv"
     return Response(
         "\ufeff" + output.getvalue(),

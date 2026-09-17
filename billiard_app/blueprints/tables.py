@@ -15,7 +15,8 @@ from ..config import (
     ICE_OPTIONS,
     SUGAR_OPTIONS,
 )
-from ..db import get_db, get_setting_float
+from ..db import get_db, get_setting_cents
+from ..money import format_cents, percentage_of_cents
 from ..services.billing import (
     active_session_by_table,
     available_discount_types,
@@ -112,7 +113,7 @@ def table_detail(table_no: int):
         selected_category_is_drink = selected_category_name == "飲料"
         selected_items = db.execute(
             """
-            SELECT id, name, price
+            SELECT id, name, price_cents
             FROM menu_items
             WHERE category_id = ? AND is_active = 1
             ORDER BY id
@@ -171,19 +172,22 @@ def start_session():
     table_rate = table_rate_for(table_no)
 
     if mode == "timed":
-        rate = float(table_rate["timed_rate_per_min"])
+        rate_cents = int(table_rate["timed_rate_per_min_cents"])
         started = commit_new_session(
             db,
             """
-            INSERT INTO sessions (table_no, mode, start_time, rate_per_min)
+            INSERT INTO sessions (table_no, mode, start_time, rate_per_min_cents)
             VALUES (?, 'timed', ?, ?)
             """,
-            (table_no, now, rate),
+            (table_no, now, rate_cents),
             table_no,
         )
         if not started:
             return redirect(url_for(".table_detail", table_no=table_no))
-        flash(f"{table_no} 號桌開始計時，每分鐘 {rate:.1f} 元。", "success")
+        flash(
+            f"{table_no} 號桌開始計時，每分鐘 {format_cents(rate_cents)} 元。",
+            "success",
+        )
         return redirect(url_for(".table_detail", table_no=table_no))
 
     if mode == "package":
@@ -201,20 +205,22 @@ def start_session():
             flash("包台時數至少 1 小時。", "error")
             return redirect(url_for(".table_detail", table_no=table_no))
 
-        rate_per_hour = float(table_rate["package_rate_per_hour"])
+        rate_per_hour_cents = int(table_rate["package_rate_per_hour_cents"])
         started = commit_new_session(
             db,
             """
-            INSERT INTO sessions (table_no, mode, start_time, package_hours, rate_per_hour)
+            INSERT INTO sessions
+                (table_no, mode, start_time, package_hours, rate_per_hour_cents)
             VALUES (?, 'package', ?, ?, ?)
             """,
-            (table_no, now, package_hours, rate_per_hour),
+            (table_no, now, package_hours, rate_per_hour_cents),
             table_no,
         )
         if not started:
             return redirect(url_for(".table_detail", table_no=table_no))
         flash(
-            f"{table_no} 號桌已包台 {package_hours} 小時，每小時 {rate_per_hour:.0f} 元。",
+            f"{table_no} 號桌已包台 {package_hours} 小時，"
+            f"每小時 {format_cents(rate_per_hour_cents)} 元。",
             "success",
         )
         return redirect(url_for(".table_detail", table_no=table_no))
@@ -261,10 +267,14 @@ def extend_package_session(session_id: int):
         return redirect(url_for(".table_detail", table_no=table_no))
     db.commit()
 
-    rate_per_hour = float(session["rate_per_hour"] or get_setting_float("package_hour_rate", 150))
-    table_fee = round(new_hours * rate_per_hour, 2)
+    rate_per_hour_cents = int(
+        session["rate_per_hour_cents"]
+        or get_setting_cents("package_hour_rate", "150")
+    )
+    table_fee_cents = new_hours * rate_per_hour_cents
     flash(
-        f"{table_no} 號桌已加時 {extra_hours} 小時，包台總時數 {new_hours} 小時，球檯費更新為 {table_fee:.0f} 元。",
+        f"{table_no} 號桌已加時 {extra_hours} 小時，包台總時數 {new_hours} 小時，"
+        f"球檯費更新為 {format_cents(table_fee_cents)} 元。",
         "success",
     )
     return redirect(url_for(".table_detail", table_no=table_no))
@@ -320,13 +330,13 @@ def add_order():
         sugar_level = ""
         ice_level = ""
 
-    unit_price = float(item["price"])
-    subtotal = round(unit_price * quantity, 2)
+    unit_price_cents = int(item["price_cents"])
+    subtotal_cents = unit_price_cents * quantity
     result = db.execute(
         """
         INSERT INTO orders (
             session_id, item_id, item_name, item_category_name, sugar_level, ice_level,
-            is_served, unit_price, quantity, subtotal
+            is_served, unit_price_cents, quantity, subtotal_cents
         )
         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE EXISTS (
@@ -341,9 +351,9 @@ def add_order():
             sugar_level,
             ice_level,
             0,
-            unit_price,
+            unit_price_cents,
             quantity,
-            subtotal,
+            subtotal_cents,
             session_id,
         ),
     )
@@ -457,7 +467,7 @@ def end_session(session_id: int):
     discount_type_id: int | None = None
     discount_name = "原價"
     discount_pricing_method = DISCOUNT_PRICING_PERCENTAGE
-    discount_package_rate_per_hour = None
+    discount_package_rate_per_hour_cents = None
     selected_discount_id = request.form.get("discount_type_id", "").strip()
     discount_type = None
     if selected_discount_id:
@@ -478,7 +488,9 @@ def end_session(session_id: int):
     ):
         discount_name = discount_type["name"]
         discount_pricing_method = discount_type["pricing_method"]
-        discount_package_rate_per_hour = discount_type["package_rate_per_hour"]
+        discount_package_rate_per_hour_cents = discount_type[
+            "package_rate_per_hour_cents"
+        ]
         discount_percent = float(discount_type["discount_percent"])
         discount_scope = discount_type["discount_scope"]
     else:
@@ -502,55 +514,64 @@ def end_session(session_id: int):
     start_dt = datetime.fromisoformat(session["start_time"])
     end_dt = datetime.now()
     if session["mode"] == "timed":
-        _, table_fee = calculate_timed_charge(
-            start_dt, end_dt, float(session["rate_per_min"])
+        _, table_fee_cents = calculate_timed_charge(
+            start_dt, end_dt, int(session["rate_per_min_cents"])
         )
     else:
-        table_fee = round(int(session["package_hours"]) * float(session["rate_per_hour"]), 2)
+        table_fee_cents = int(session["package_hours"]) * int(
+            session["rate_per_hour_cents"]
+        )
 
-    food_fee = session_food_total(session_id)
-    drink_fee = session_drink_total(session_id)
-    gross_total = round(table_fee + food_fee, 2)
+    food_fee_cents = session_food_total(session_id)
+    drink_fee_cents = session_drink_total(session_id)
+    gross_total_cents = table_fee_cents + food_fee_cents
 
     if discount_pricing_method == DISCOUNT_PRICING_PACKAGE_HOURLY:
-        package_fee = round(
-            int(session["package_hours"]) * float(discount_package_rate_per_hour), 2
+        package_fee_cents = (
+            int(session["package_hours"])
+            * int(discount_package_rate_per_hour_cents)
         )
-        discount_amount = round(table_fee - package_fee, 2)
-        final_total = round(package_fee + food_fee, 2)
-        discount_percent = round(package_fee / table_fee * 100, 4) if table_fee else 100.0
+        discount_amount_cents = table_fee_cents - package_fee_cents
+        final_total_cents = package_fee_cents + food_fee_cents
+        discount_percent = (
+            round(package_fee_cents / table_fee_cents * 100, 4)
+            if table_fee_cents
+            else 100.0
+        )
         discount_scope = DISCOUNT_SCOPE_TABLE_ONLY
     else:
         if discount_scope == DISCOUNT_SCOPE_TABLE_ONLY:
-            discount_base = table_fee
+            discount_base_cents = table_fee_cents
         elif discount_scope == DISCOUNT_SCOPE_TABLE_AND_DRINK:
-            discount_base = table_fee + drink_fee
+            discount_base_cents = table_fee_cents + drink_fee_cents
         else:
-            discount_base = gross_total
-        discount_amount = round(discount_base * (100 - discount_percent) / 100, 2)
-        final_total = round(gross_total - discount_amount, 2)
+            discount_base_cents = gross_total_cents
+        discount_amount_cents = percentage_of_cents(
+            discount_base_cents, 100 - discount_percent
+        )
+        final_total_cents = gross_total_cents - discount_amount_cents
 
     result = db.execute(
         """
         UPDATE sessions
-        SET end_time = ?, status = 'closed', table_fee = ?, food_fee = ?,
+        SET end_time = ?, status = 'closed', table_fee_cents = ?, food_fee_cents = ?,
             discount_type_id = ?, discount_name = ?, discount_pricing_method = ?,
-            discount_package_rate_per_hour = ?, discount_percent = ?,
-            discount_scope = ?, discount_amount = ?, final_total = ?
+            discount_package_rate_per_hour_cents = ?, discount_percent = ?,
+            discount_scope = ?, discount_amount_cents = ?, final_total_cents = ?
         WHERE id = ? AND status = 'active'
         """,
         (
             end_dt.isoformat(timespec="seconds"),
-            table_fee,
-            food_fee,
+            table_fee_cents,
+            food_fee_cents,
             discount_type_id,
             discount_name,
             discount_pricing_method,
-            discount_package_rate_per_hour,
+            discount_package_rate_per_hour_cents,
             discount_percent,
             discount_scope,
-            discount_amount,
-            final_total,
+            discount_amount_cents,
+            final_total_cents,
             session_id,
         ),
     )
@@ -563,10 +584,13 @@ def end_session(session_id: int):
     flash(
         (
             f"{session['table_no']} 號桌已結帳。"
-            f"球檯費 {table_fee:.0f} 元、飲料+餐點 {food_fee:.0f} 元、"
-            f"優惠 {discount_name}：{discount_pricing_label(discount_pricing_method, discount_percent, discount_package_rate_per_hour)}"
+            f"球檯費 {format_cents(table_fee_cents)} 元、"
+            f"飲料+餐點 {format_cents(food_fee_cents)} 元、"
+            f"優惠 {discount_name}："
+            f"{discount_pricing_label(discount_pricing_method, discount_percent, discount_package_rate_per_hour_cents)}"
             f"（{discount_scope_label(discount_scope)}）"
-            f"共折 {discount_amount:.0f} 元，應收 {final_total:.0f} 元。"
+            f"共折 {format_cents(discount_amount_cents)} 元，"
+            f"應收 {format_cents(final_total_cents)} 元。"
         ),
         "success",
     )
