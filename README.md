@@ -297,7 +297,7 @@ python -m unittest discover -s tests -v
 
 ```bash
 git clone https://github.com/cloud-sky-0128/billiard-management-system.git
-cd billiard
+cd billiard-management-system
 python -m venv .venv
 ```
 
@@ -319,6 +319,70 @@ python app.py
 
 瀏覽器開啟 <http://127.0.0.1:5000>。終端機需要保持執行；第一次啟動會自動建立 `billiard.db`。
 若偵測到舊版金額欄位，啟動時會先將原資料庫備份到 `backups/`，再把金額安全遷移為整數分欄位。
+
+## 讓朋友測試
+
+### 方法一：朋友在自己的電腦執行
+
+這是目前最推薦的測試方式。每台電腦會建立自己的 `billiard.db`，不會修改你的資料。
+
+朋友先安裝 [Python 3](https://www.python.org/downloads/) 與 [Git](https://git-scm.com/downloads)，再開啟 PowerShell 執行：
+
+```powershell
+git clone https://github.com/cloud-sky-0128/billiard-management-system.git
+cd billiard-management-system
+py -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe app.py
+```
+
+看到以下訊息代表啟動成功：
+
+```text
+Running on http://127.0.0.1:5000
+```
+
+接著在同一台電腦的瀏覽器開啟 <http://127.0.0.1:5000>。測試期間不要關閉 PowerShell；要停止伺服器時按 `Ctrl+C`。
+
+如果系統找不到 `py`，將上述指令中的 `py` 改成 `python`。
+
+### 方法二：同一個 Wi-Fi 連到你的電腦
+
+這種方式會共用你電腦上的同一份資料庫。測試前建議先備份 `billiard.db`，而且只允許信任的朋友連線。
+
+1. 確認你和朋友的電腦連到相同 Wi-Fi。
+2. 如果原本已經執行 `python app.py`，先在該 PowerShell 按 `Ctrl+C` 停止。
+3. 在專案目錄執行：
+
+```powershell
+.venv\Scripts\python.exe -m flask --app app run --host=0.0.0.0 --port=5000
+```
+
+4. Windows 防火牆詢問時，只允許「私人網路」。
+5. 另外開啟一個 PowerShell，查詢你的區域網路 IP：
+
+```powershell
+ipconfig
+```
+
+在 Wi-Fi 網路介面找到 `IPv4 Address`，例如 `192.168.1.100`。朋友的瀏覽器應開啟：
+
+```text
+http://192.168.1.100:5000
+```
+
+請把範例 IP 換成你實際查到的 IPv4。`0.0.0.0` 只是伺服器監聽設定，不是瀏覽器網址。
+
+目前系統尚未加入登入與權限控制，請勿設定路由器 Port Forwarding，也不要直接將此開發伺服器公開到網際網路。不同網路的遠端測試應先建立 Demo 模式、登入保護及正式部署環境。
+
+### 朋友無法連線時
+
+- 確認主機的 PowerShell 仍顯示伺服器正在執行。
+- 確認雙方使用相同 Wi-Fi，且不是會隔離裝置的訪客網路。
+- 確認網址使用 `http://`，不是 `https://`。
+- 重新執行 `ipconfig`，確認主機的 IPv4 沒有改變。
+- 確認 Windows 防火牆已允許 Python 使用私人網路。
+- 主機可以先開啟 <http://127.0.0.1:5000>，確認程式本身正常。
 
 ### 建立展示資料
 
