@@ -86,7 +86,7 @@ class BilliardAppTestCase(unittest.TestCase):
             patch.object(sys, "executable", str(executable)),
             patch("billiard_app._ensure_writable_directory", side_effect=allow_only_portable_data),
         ):
-            expected = executable.parent / "data" / "billiard.db"
+            expected = executable.resolve().parent / "data" / "billiard.db"
             self.assertEqual(default_database_path(), expected)
 
     def test_shift_date_picker_keeps_monday_to_sunday_columns(self):
