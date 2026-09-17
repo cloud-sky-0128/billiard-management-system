@@ -1,5 +1,7 @@
 # Billiard Hall Management System
 
+[![Tests](https://github.com/cloud-sky-0128/billiard-management-system/actions/workflows/tests.yml/badge.svg)](https://github.com/cloud-sky-0128/billiard-management-system/actions/workflows/tests.yml)
+
 一套以 Flask、Jinja2 與 SQLite 開發的撞球館營運管理系統，將球檯計費、餐飲點單、預約、排班與財務統計整合在同一個操作介面。
 
 > Portfolio project for demonstrating server-side web development, relational database design, business-rule implementation, and automated regression testing.
