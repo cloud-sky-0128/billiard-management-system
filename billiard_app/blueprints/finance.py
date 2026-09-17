@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 import csv
 import io
+import math
 from datetime import date, timedelta
 
 from flask import Blueprint, Response, flash, redirect, render_template, request, url_for
@@ -93,9 +94,15 @@ def month_summary(month: date, following: date) -> dict:
 def finance_page():
     month, following = selected_month()
     summary = month_summary(month, following)
-    selected_date = request.args.get("date", date.today().isoformat())
-    if not (month.isoformat() <= selected_date < following.isoformat()):
-        selected_date = month.isoformat()
+    try:
+        selected_day = date.fromisoformat(
+            request.args.get("date", date.today().isoformat())
+        )
+    except ValueError:
+        selected_day = month
+    if not month <= selected_day < following:
+        selected_day = month
+    selected_date = selected_day.isoformat()
     selected_row = next(row for row in summary["rows"] if row["date"] == selected_date)
     return render_template(
         "finance.html",
@@ -114,7 +121,7 @@ def save_actual_revenue():
     try:
         day = date.fromisoformat(record_date)
         amount = float(request.form["actual_revenue"])
-        if amount < 0:
+        if not math.isfinite(amount) or amount < 0:
             raise ValueError("實收不可小於 0。")
     except (KeyError, ValueError) as exc:
         flash(f"實收資料無效：{exc}", "error")
@@ -142,7 +149,7 @@ def add_expense():
     try:
         day = date.fromisoformat(expense_date)
         amount = float(request.form["amount"])
-        if amount <= 0:
+        if not math.isfinite(amount) or amount <= 0:
             raise ValueError("支出金額必須大於 0。")
         if category not in EXPENSE_CATEGORIES:
             raise ValueError("支出分類無效。")

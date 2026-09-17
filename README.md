@@ -277,7 +277,7 @@ sequenceDiagram
 python -m unittest discover -v
 ```
 
-目前共有 **17 項自動化測試**，測試使用暫存 SQLite，不會修改正式的 `billiard.db`。涵蓋範圍包括：
+目前共有 **22 項自動化測試**，測試使用暫存 SQLite，不會修改正式的 `billiard.db`。涵蓋範圍包括：
 
 - 開台、點餐、折扣與結帳完整流程。
 - 同桌重複開台的 application 與 database 雙層保護。
@@ -342,7 +342,7 @@ python scripts/seed_demo.py demo.db
 2. **歷史資料設計：** 訂單保存 `item_name`、`item_category_name`、`unit_price`，session 保存費率與折扣快照。
 3. **複雜時間規則：** 支援包台倒數、分鐘進位、跨午夜優惠及隔日凌晨班別衝突判斷。
 4. **安全資料清除：** 使用 transaction、多重確認、開台檢查與刪除前備份降低誤刪風險。
-5. **可測試架構：** Application Factory 可注入暫存 database，17 項 regression tests 不會污染正式資料。
+5. **可測試架構：** Application Factory 可注入暫存 database，22 項 regression tests 不會污染正式資料。
 
 ## 已知限制與後續規劃
 

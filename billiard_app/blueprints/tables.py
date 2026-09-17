@@ -251,10 +251,14 @@ def extend_package_session(session_id: int):
 
     current_hours = int(session["package_hours"] or 0)
     new_hours = current_hours + extra_hours
-    db.execute(
-        "UPDATE sessions SET package_hours = ? WHERE id = ?",
+    result = db.execute(
+        "UPDATE sessions SET package_hours = ? WHERE id = ? AND status = 'active'",
         (new_hours, session_id),
     )
+    if not result.rowcount:
+        db.rollback()
+        flash("球檯已結帳，未加入時數。", "error")
+        return redirect(url_for(".table_detail", table_no=table_no))
     db.commit()
 
     rate_per_hour = float(session["rate_per_hour"] or get_setting_float("package_hour_rate", 150))
@@ -269,9 +273,16 @@ def extend_package_session(session_id: int):
 @bp.route("/orders/add", methods=["POST"])
 def add_order():
     db = get_db()
-    session_id = int(request.form["session_id"])
-    item_id = int(request.form["item_id"])
-    quantity = max(1, int(request.form.get("quantity", "1")))
+    try:
+        session_id = int(request.form["session_id"])
+        item_id = int(request.form["item_id"])
+        quantity = int(request.form.get("quantity", "1"))
+    except (KeyError, ValueError):
+        flash("點餐資料格式錯誤。", "error")
+        return redirect(url_for(".dashboard"))
+    if quantity < 1:
+        flash("餐點數量至少為 1。", "error")
+        return redirect(url_for(".dashboard"))
     category_id = request.form.get("category_id", "").strip()
     sugar_level = request.form.get("sugar_level", "").strip()
     ice_level = request.form.get("ice_level", "").strip()
@@ -289,7 +300,7 @@ def add_order():
         SELECT m.*, c.name AS category_name
         FROM menu_items m
         JOIN categories c ON c.id = m.category_id
-        WHERE m.id = ? AND m.is_active = 1
+        WHERE m.id = ? AND m.is_active = 1 AND c.is_active = 1
         """,
         (item_id,),
     ).fetchone()
@@ -311,13 +322,16 @@ def add_order():
 
     unit_price = float(item["price"])
     subtotal = round(unit_price * quantity, 2)
-    db.execute(
+    result = db.execute(
         """
         INSERT INTO orders (
             session_id, item_id, item_name, item_category_name, sugar_level, ice_level,
             is_served, unit_price, quantity, subtotal
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+            SELECT 1 FROM sessions WHERE id = ? AND status = 'active'
+        )
         """,
         (
             session_id,
@@ -330,8 +344,13 @@ def add_order():
             unit_price,
             quantity,
             subtotal,
+            session_id,
         ),
     )
+    if not result.rowcount:
+        db.rollback()
+        flash("球檯已結帳，未新增餐點。", "error")
+        return redirect(url_for(".table_detail", table_no=session["table_no"]))
     db.commit()
 
     flash(f"已新增：{item['name']} x {quantity}", "success")
@@ -361,7 +380,18 @@ def toggle_order_served(order_id: int):
         return redirect(url_for(".table_detail", table_no=row["table_no"]))
 
     is_served = 1 if request.form.get("is_served") == "1" else 0
-    db.execute("UPDATE orders SET is_served = ? WHERE id = ?", (is_served, order_id))
+    result = db.execute(
+        """UPDATE orders SET is_served = ?
+           WHERE id = ? AND EXISTS (
+               SELECT 1 FROM sessions
+               WHERE id = orders.session_id AND status = 'active'
+           )""",
+        (is_served, order_id),
+    )
+    if not result.rowcount:
+        db.rollback()
+        flash("球檯已結帳，未修改訂單。", "error")
+        return redirect(url_for(".table_detail", table_no=row["table_no"]))
     db.commit()
 
     category_id = request.form.get("category_id", "").strip()
@@ -390,7 +420,18 @@ def delete_order(order_id: int):
         flash("已關台訂單不可刪除。", "error")
         return redirect(url_for(".table_detail", table_no=row["table_no"]))
 
-    db.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+    result = db.execute(
+        """DELETE FROM orders
+           WHERE id = ? AND EXISTS (
+               SELECT 1 FROM sessions
+               WHERE id = orders.session_id AND status = 'active'
+           )""",
+        (order_id,),
+    )
+    if not result.rowcount:
+        db.rollback()
+        flash("球檯已結帳，未刪除訂單。", "error")
+        return redirect(url_for(".table_detail", table_no=row["table_no"]))
     db.commit()
     flash("已刪除該筆訂單。", "success")
 
@@ -403,11 +444,13 @@ def delete_order(order_id: int):
 @bp.route("/sessions/end/<int:session_id>", methods=["POST"])
 def end_session(session_id: int):
     db = get_db()
+    db.execute("BEGIN IMMEDIATE")
     session = db.execute(
         "SELECT * FROM sessions WHERE id = ? AND status = 'active'",
         (session_id,),
     ).fetchone()
     if not session:
+        db.rollback()
         flash("找不到進行中的球檯紀錄。", "error")
         return redirect(url_for(".dashboard"))
 
@@ -487,14 +530,14 @@ def end_session(session_id: int):
         discount_amount = round(discount_base * (100 - discount_percent) / 100, 2)
         final_total = round(gross_total - discount_amount, 2)
 
-    db.execute(
+    result = db.execute(
         """
         UPDATE sessions
         SET end_time = ?, status = 'closed', table_fee = ?, food_fee = ?,
             discount_type_id = ?, discount_name = ?, discount_pricing_method = ?,
             discount_package_rate_per_hour = ?, discount_percent = ?,
             discount_scope = ?, discount_amount = ?, final_total = ?
-        WHERE id = ?
+        WHERE id = ? AND status = 'active'
         """,
         (
             end_dt.isoformat(timespec="seconds"),
@@ -511,6 +554,10 @@ def end_session(session_id: int):
             session_id,
         ),
     )
+    if not result.rowcount:
+        db.rollback()
+        flash("球檯已由其他操作完成結帳，未重複寫入。", "error")
+        return redirect(url_for(".table_detail", table_no=session["table_no"]))
     db.commit()
 
     flash(

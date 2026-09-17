@@ -1,4 +1,6 @@
 import tempfile
+import threading
+import time
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -10,6 +12,7 @@ from billiard_app.services.billing import (
     build_session_runtime,
     calculate_timed_charge,
     discount_type_is_available,
+    session_food_total,
 )
 
 
@@ -39,6 +42,9 @@ class BilliardAppTestCase(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
+        response = self.client.get("/")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "SAMEORIGIN")
 
     def test_shift_date_picker_keeps_monday_to_sunday_columns(self):
         html = self.client.get(
@@ -178,6 +184,66 @@ class BilliardAppTestCase(unittest.TestCase):
         self.assertEqual(after, before)
         self.assertEqual(
             self.db_value("SELECT COUNT(*) FROM sessions WHERE table_no = 4"), 1
+        )
+
+    def test_checkout_rejects_an_order_that_arrives_during_closing(self):
+        self.client.post("/sessions/start", data={"table_no": "4", "mode": "timed"})
+        session_id = self.db_value(
+            "SELECT id FROM sessions WHERE table_no = 4 AND status = 'active'"
+        )
+        with self.app.app_context():
+            item_id = get_db().execute(
+                """SELECT m.id FROM menu_items m
+                   JOIN categories c ON c.id = m.category_id
+                   WHERE c.name = '餐點' AND m.is_active = 1 LIMIT 1"""
+            ).fetchone()["id"]
+
+        checkout_paused = threading.Event()
+        release_checkout = threading.Event()
+        responses = {}
+
+        def paused_food_total(current_session_id):
+            checkout_paused.set()
+            release_checkout.wait(timeout=3)
+            return session_food_total(current_session_id)
+
+        def checkout_request():
+            with self.app.test_client() as client:
+                responses["checkout"] = client.post(
+                    f"/sessions/end/{session_id}",
+                    data={"discount_percent": "100", "discount_scope": "all"},
+                )
+
+        def order_request():
+            with self.app.test_client() as client:
+                responses["order"] = client.post(
+                    "/orders/add",
+                    data={"session_id": session_id, "item_id": item_id, "quantity": "1"},
+                )
+
+        with patch(
+            "billiard_app.blueprints.tables.session_food_total",
+            side_effect=paused_food_total,
+        ):
+            checkout_thread = threading.Thread(target=checkout_request)
+            checkout_thread.start()
+            self.assertTrue(checkout_paused.wait(timeout=3))
+
+            order_thread = threading.Thread(target=order_request)
+            order_thread.start()
+            time.sleep(0.1)
+            release_checkout.set()
+            checkout_thread.join(timeout=3)
+            order_thread.join(timeout=3)
+
+        self.assertFalse(checkout_thread.is_alive())
+        self.assertFalse(order_thread.is_alive())
+        self.assertEqual(responses["checkout"].status_code, 302)
+        self.assertEqual(responses["order"].status_code, 302)
+        self.assertEqual(self.db_value("SELECT COUNT(*) FROM orders"), 0)
+        self.assertEqual(
+            self.db_value("SELECT status FROM sessions WHERE id = ?", (session_id,)),
+            "closed",
         )
 
     def test_database_prevents_duplicate_active_sessions(self):
@@ -661,6 +727,86 @@ class BilliardAppTestCase(unittest.TestCase):
         self.assertIn("2026-09-17", csv_text)
         self.assertIn("drinks", csv_text)
         self.assertIn("收支淨額", csv_text)
+
+    def test_finance_invalid_selected_date_falls_back_to_month(self):
+        response = self.client.get("/finance?month=2026-09&date=2026-09-99")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('value="2026-09-01"', response.get_data(as_text=True))
+
+    def test_order_rejects_malformed_data_and_inactive_categories(self):
+        response = self.client.post(
+            "/orders/add",
+            data={"session_id": "invalid", "item_id": "1", "quantity": "1"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.db_value("SELECT COUNT(*) FROM orders"), 0)
+
+        self.client.post("/sessions/start", data={"table_no": "1", "mode": "timed"})
+        session_id = self.db_value(
+            "SELECT id FROM sessions WHERE table_no = 1 AND status = 'active'"
+        )
+        with self.app.app_context():
+            db = get_db()
+            item = db.execute(
+                """SELECT m.id, m.category_id FROM menu_items m
+                   JOIN categories c ON c.id = m.category_id
+                   WHERE c.name = '餐點' LIMIT 1"""
+            ).fetchone()
+            db.execute(
+                "UPDATE categories SET is_active = 0 WHERE id = ?",
+                (item["category_id"],),
+            )
+            db.commit()
+
+        response = self.client.post(
+            "/orders/add",
+            data={"session_id": session_id, "item_id": item["id"], "quantity": "1"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.db_value("SELECT COUNT(*) FROM orders"), 0)
+
+    def test_non_finite_money_values_are_rejected(self):
+        category_id = self.db_value(
+            "SELECT id FROM categories WHERE is_active = 1 ORDER BY id LIMIT 1"
+        )
+        self.client.post(
+            "/menu/items/add",
+            data={"category_id": category_id, "name": "Invalid price", "price": "nan"},
+        )
+        self.assertEqual(
+            self.db_value("SELECT COUNT(*) FROM menu_items WHERE name = 'Invalid price'"),
+            0,
+        )
+
+        self.client.post(
+            "/finance/cash",
+            data={"record_date": "2026-09-17", "actual_revenue": "inf", "note": ""},
+        )
+        self.client.post(
+            "/finance/expenses",
+            data={
+                "expense_date": "2026-09-17",
+                "category": "其他",
+                "amount": "nan",
+                "description": "Invalid amount",
+            },
+        )
+        self.assertEqual(self.db_value("SELECT COUNT(*) FROM daily_cash_records"), 0)
+        self.assertEqual(self.db_value("SELECT COUNT(*) FROM expenses"), 0)
+
+    def test_table_count_cannot_hide_an_active_session(self):
+        self.client.post("/sessions/start", data={"table_no": "10", "mode": "timed"})
+        response = self.client.post(
+            "/settings/rates",
+            data={"table_count": "5"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("請先結帳仍在使用的桌號：10", response.get_data(as_text=True))
+        self.assertEqual(
+            self.db_value("SELECT value FROM settings WHERE key = 'table_count'"),
+            "10",
+        )
 
     def test_test_data_reset_clears_operations_but_preserves_configuration(self):
         self.client.post("/sessions/start", data={"table_no": "1", "mode": "timed"})

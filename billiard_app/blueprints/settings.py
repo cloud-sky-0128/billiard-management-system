@@ -1,4 +1,5 @@
 ﻿import sqlite3
+import math
 from datetime import date, datetime
 from pathlib import Path
 
@@ -162,6 +163,15 @@ def update_rate_settings():
         flash("球檯數量需介於 1 到 100。", "error")
         return redirect(url_for(".rate_settings_page"))
     db = get_db()
+    hidden_active_tables = db.execute(
+        """SELECT table_no FROM sessions
+           WHERE status = 'active' AND table_no > ? ORDER BY table_no""",
+        (table_count,),
+    ).fetchall()
+    if hidden_active_tables:
+        table_labels = "、".join(str(row["table_no"]) for row in hidden_active_tables)
+        flash(f"無法縮減球檯數，請先結帳仍在使用的桌號：{table_labels}。", "error")
+        return redirect(url_for(".rate_settings_page"))
     existing_rates = {
         int(row["table_no"]): row
         for row in db.execute("SELECT * FROM table_rates").fetchall()
@@ -191,7 +201,12 @@ def update_rate_settings():
                 package_enabled = bool(existing["package_enabled"])
             else:
                 package_enabled = True
-            if timed_rate <= 0 or package_rate <= 0:
+            if (
+                not math.isfinite(timed_rate)
+                or not math.isfinite(package_rate)
+                or timed_rate <= 0
+                or package_rate <= 0
+            ):
                 raise ValueError
             rows.append((table_no, timed_rate, package_rate, int(package_enabled)))
     except ValueError:
@@ -252,7 +267,7 @@ def discount_form_data() -> dict:
             package_rate_per_hour = float(request.form.get("package_rate_per_hour", ""))
         except ValueError as exc:
             raise ValueError("包台優惠價格式錯誤。") from exc
-        if package_rate_per_hour <= 0:
+        if not math.isfinite(package_rate_per_hour) or package_rate_per_hour <= 0:
             raise ValueError("包台每小時優惠價必須大於 0。")
         discount_percent = 100.0
         applicable_mode = DISCOUNT_MODE_PACKAGE
@@ -262,7 +277,7 @@ def discount_form_data() -> dict:
             discount_percent = float(request.form.get("discount_percent", "100"))
         except ValueError as exc:
             raise ValueError("折數格式錯誤。") from exc
-        if not 0 < discount_percent <= 100:
+        if not math.isfinite(discount_percent) or not 0 < discount_percent <= 100:
             raise ValueError("折數百分比需大於 0 且不超過 100。")
     if bool(start_time) != bool(end_time):
         raise ValueError("有效時段的開始與結束必須一起填寫。")

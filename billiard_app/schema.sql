@@ -72,6 +72,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_sessions_one_active_per_table
     ON sessions(table_no) WHERE status = 'active';
 
+CREATE INDEX IF NOT EXISTS idx_sessions_closed_end_time
+    ON sessions(status, end_time);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_start_time
+    ON sessions(start_time);
+
 CREATE INDEX IF NOT EXISTS idx_discount_types_active
     ON discount_types(is_active, name);
 
@@ -90,6 +96,11 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(session_id) REFERENCES sessions(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_orders_session_id ON orders(session_id);
+
+CREATE INDEX IF NOT EXISTS idx_menu_items_category_active
+    ON menu_items(category_id, is_active);
 
 CREATE TABLE IF NOT EXISTS reservations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 
 from flask import Flask
 
@@ -15,9 +16,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         static_folder=str(PROJECT_ROOT / "static"),
     )
     app.config.from_mapping(
-        SECRET_KEY=os.environ.get("SECRET_KEY", "dev-only-change-before-deployment"),
+        SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
         DATABASE=str(PROJECT_ROOT / "billiard.db"),
         BACKUP_ON_RESET=True,
+        MAX_CONTENT_LENGTH=1024 * 1024,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
     )
     if test_config:
         app.config.update(test_config)
@@ -37,6 +41,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(stats_bp)
     app.register_blueprint(reservations_bp)
     app.register_blueprint(shifts_bp)
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        return response
 
     init_database(app)
     return app

@@ -1,5 +1,7 @@
 ﻿from flask import Blueprint, flash, redirect, render_template, request, url_for
 
+from math import isfinite
+
 from ..db import get_db
 
 bp = Blueprint("menu", __name__)
@@ -85,7 +87,7 @@ def add_menu_item():
         flash("品項名稱不可空白。", "error")
         return redirect(url_for(".menu_page"))
 
-    if price <= 0:
+    if not isfinite(price) or price <= 0:
         flash("價格需大於 0。", "error")
         return redirect(url_for(".menu_page"))
 
@@ -121,11 +123,13 @@ def update_menu_item(item_id: int):
     if not name:
         flash("品項名稱不可空白。", "error")
         return redirect(url_for(".menu_page"))
-    if price <= 0:
+    if not isfinite(price) or price <= 0:
         flash("價格需大於 0。", "error")
         return redirect(url_for(".menu_page"))
 
-    item = db.execute("SELECT * FROM menu_items WHERE id = ?", (item_id,)).fetchone()
+    item = db.execute(
+        "SELECT * FROM menu_items WHERE id = ? AND is_active = 1", (item_id,)
+    ).fetchone()
     if not item:
         flash("找不到品項。", "error")
         return redirect(url_for(".menu_page"))
