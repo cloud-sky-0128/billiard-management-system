@@ -292,7 +292,7 @@ python -m unittest discover -v
 需求：Python 3.10 以上。
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/cloud-sky-0128/billiard-management-system.git
 cd billiard
 python -m venv .venv
 ```
