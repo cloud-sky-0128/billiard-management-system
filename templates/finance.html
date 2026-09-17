@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h1>收支管理</h1>
+      <p class="muted">系統營收用於核對，月結以收支淨額為準</p>
+    </div>
+    <a class="btn-link" href="{{ url_for('finance.export_finance', month=month.strftime('%Y-%m')) }}">下載月報 CSV</a>
+  </div>
+  <form class="inline-form" method="get" action="{{ url_for('finance.finance_page') }}">
+    <label>月份 <input type="month" name="month" value="{{ month.strftime('%Y-%m') }}" required></label>
+    <button type="submit">查詢</button>
+  </form>
+</section>
+
+<section class="four-col">
+  <article class="panel"><h3>系統營收</h3><p class="big-number">{{ system_total|int }}</p></article>
+  <article class="panel"><h3>實際實收</h3><p class="big-number">{{ actual_total|int }}</p></article>
+  <article class="panel"><h3>支出</h3><p class="big-number expense-number">{{ expense_total|int }}</p></article>
+  <article class="panel"><h3>收支淨額</h3><p class="big-number {% if net_total < 0 %}expense-number{% endif %}">{{ net_total|int }}</p></article>
+</section>
+
+{% if missing_actual_days %}
+<section class="finance-warning">有 {{ missing_actual_days }} 天存在系統營收或支出，但尚未填寫實際實收，月結數字可能不完整。</section>
+{% endif %}
+
+<section class="two-col">
+  <article class="panel">
+    <h2>登記每日實收</h2>
+    <form class="schedule-form" method="post" action="{{ url_for('finance.save_actual_revenue') }}">
+      <label>日期 <input type="date" name="record_date" value="{{ selected_date }}" required></label>
+      <label>實際實收 <input type="number" name="actual_revenue" min="0" step="1" value="{{ selected_row.actual_revenue|int if selected_row.actual_revenue is not none else '' }}" required></label>
+      <label class="schedule-full">備註 <input name="note" maxlength="500" value="{{ selected_row.cash_note }}" placeholder="例如：現金短少、補收款"></label>
+      <button type="submit">儲存實收</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <h2>新增支出</h2>
+    <form class="schedule-form" method="post" action="{{ url_for('finance.add_expense') }}">
+      <label>日期 <input type="date" name="expense_date" value="{{ selected_date }}" required></label>
+      <label>分類
+        <select name="category">{% for category in expense_categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}</select>
+      </label>
+      <label>金額 <input type="number" name="amount" min="1" step="1" required></label>
+      <label>備註 <input name="description" maxlength="500" placeholder="例如：飲料進貨、九月薪資"></label>
+      <button type="submit">新增支出</button>
+    </form>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>{{ month.strftime('%Y 年 %m 月') }} 月報</h2>
+  <div class="table-scroll">
+    <table class="finance-table">
+      <thead><tr><th>日期</th><th>系統營收</th><th>實際實收</th><th>支出</th><th>支出明細／備註</th><th>收支淨額</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="{% if row.date == selected_date %}is-selected-row{% endif %}">
+          <td><a href="{{ url_for('finance.finance_page', month=month.strftime('%Y-%m'), date=row.date) }}">{{ row.date }}</a></td>
+          <td>{{ row.system_revenue|int }}</td>
+          <td>{% if row.actual_revenue is not none %}{{ row.actual_revenue|int }}{% else %}<span class="muted">未填</span>{% endif %}</td>
+          <td>{{ row.expense_total|int }}</td>
+          <td>
+            {% for expense in row.expenses %}
+              <div class="expense-entry">
+                <span>{{ expense.category }}：{{ expense.description or '無備註' }}（{{ expense.amount|int }}）</span>
+                <form method="post" action="{{ url_for('finance.delete_expense', expense_id=expense.id) }}" onsubmit="return confirm('刪除這筆支出？');">
+                  <button type="submit" class="chip-delete" aria-label="刪除支出">×</button>
+                </form>
+              </div>
+            {% else %}<span class="muted">－</span>{% endfor %}
+          </td>
+          <td>{% if row.net is not none %}{{ row.net|int }}{% else %}<span class="muted">未完成</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><th>月總計</th><th>{{ system_total|int }}</th><th>{{ actual_total|int }}</th><th>{{ expense_total|int }}</th><th></th><th>{{ net_total|int }}</th></tr></tfoot>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,79 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <h2>營業統計</h2>
+  <form class="inline-form" method="get" action="{{ url_for('stats.stats_page') }}">
+    <label>查詢日期</label>
+    <input type="date" name="date" value="{{ selected_date }}" required>
+    <button type="submit">查詢</button>
+  </form>
+</section>
+
+<section class="four-col">
+  <article class="panel">
+    <h3>球檯營收</h3>
+    <p class="big-number">{{ table_revenue|int }}</p>
+  </article>
+  <article class="panel">
+    <h3>餐點/飲料營收</h3>
+    <p class="big-number">{{ food_revenue|int }}</p>
+  </article>
+  <article class="panel">
+    <h3>原始總額</h3>
+    <p class="big-number">{{ gross_total|int }}</p>
+  </article>
+  <article class="panel">
+    <h3>折扣後實收</h3>
+    <p class="big-number">{{ net_total|int }}</p>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>每小時開台筆數</h3>
+  <div class="traffic-chart">
+    {% for value in traffic_data %}
+      {% set height = (value / max_traffic * 100) if max_traffic > 0 else 0 %}
+      <div class="bar-wrap">
+        <div class="bar" style="height: {{ height }}%" title="{{ loop.index0 }} 點：{{ value }} 筆"></div>
+        <span class="bar-label">{{ loop.index0 }}</span>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h3>當日結帳紀錄</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>結帳時間</th>
+        <th>桌號</th>
+        <th>模式</th>
+        <th>球檯費</th>
+        <th>餐點/飲料費</th>
+        <th>折扣</th>
+        <th>折扣套用</th>
+        <th>實收</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in closed_sessions %}
+      <tr>
+        <td>{{ row.end_time }}</td>
+        <td>{{ row.table_no }}</td>
+        <td>{{ row.mode_label }}</td>
+        <td>{{ row.table_fee|int }}</td>
+        <td>{{ row.food_fee|int }}</td>
+        <td>{{ row.discount_name }} · {{ row.discount_label }}</td>
+        <td>{{ row.discount_scope_label }}</td>
+        <td>{{ row.final_total|int }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="8">當日尚無結帳資料</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

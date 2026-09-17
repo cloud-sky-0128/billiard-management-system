@@ -1,0 +1,87 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h1>排班設定</h1>
+      <p class="muted">管理員工名單與自訂班別</p>
+    </div>
+    <a class="btn-link" href="{{ url_for('shifts.shifts_page') }}">返回班表</a>
+  </div>
+</section>
+
+<section class="two-col">
+  <article class="panel">
+    <h2>員工名單</h2>
+    <form class="inline-form" method="post" action="{{ url_for('shifts.add_employee') }}">
+      <input name="name" maxlength="100" placeholder="員工姓名" required>
+      <label class="employee-color-picker">顏色 <input type="color" name="color" value="{{ default_employee_color }}" aria-label="員工顏色"></label>
+      <button type="submit">加入人員</button>
+    </form>
+    <div class="employee-list">
+      {% for employee in employees %}
+        <div class="employee-chip">
+          <span class="employee-color-dot" style="background-color: {{ employee.color }}" aria-hidden="true"></span>
+          <span>{{ employee.name }}</span>
+          <form class="employee-color-form" method="post" action="{{ url_for('shifts.update_employee_color', employee_id=employee.id) }}">
+            <input type="color" name="color" value="{{ employee.color }}" aria-label="修改 {{ employee.name }} 的顏色">
+            <button class="secondary compact-button" type="submit">儲存顏色</button>
+          </form>
+          <form method="post" action="{{ url_for('shifts.delete_employee', employee_id=employee.id) }}" onsubmit="return confirm('從選單移除此員工？既有班表不會刪除。');">
+            <button class="chip-delete" type="submit" aria-label="移除 {{ employee.name }}">×</button>
+          </form>
+        </div>
+      {% else %}
+        <p class="muted">目前沒有員工，請先加入人員。</p>
+      {% endfor %}
+    </div>
+    <p class="muted">移除人員只會從選單隱藏，不會刪除既有班表。</p>
+  </article>
+
+  <article class="panel">
+    <h2>新增班別</h2>
+    <form class="shift-setting-form" method="post" action="{{ url_for('shifts.add_shift_type') }}">
+      <label>班別名稱 <input name="name" maxlength="50" placeholder="例如：假日班" required></label>
+      <div class="shift-time-inputs">
+        <label>開始 <input type="time" name="start_time" required></label>
+        <label>結束 <input type="time" name="end_time" required></label>
+      </div>
+      <label class="checkbox-inline"><input type="checkbox" name="ends_next_day" value="1">結束時間是隔天凌晨</label>
+      <button type="submit">新增班別</button>
+    </form>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>現有班別</h2>
+  <div class="shift-type-list">
+    {% for shift_type in shift_types %}
+      <div class="shift-type-editor">
+        <div class="shift-order-actions" aria-label="調整 {{ shift_type.name }} 的顯示順序">
+          <form method="post" action="{{ url_for('shifts.move_shift_type', shift_type_id=shift_type.id) }}">
+            <input type="hidden" name="direction" value="up">
+            <button class="sort-arrow-button" type="submit" aria-label="將 {{ shift_type.name }} 上移" title="上移" {% if loop.first %}disabled{% endif %}>▲</button>
+          </form>
+          <form method="post" action="{{ url_for('shifts.move_shift_type', shift_type_id=shift_type.id) }}">
+            <input type="hidden" name="direction" value="down">
+            <button class="sort-arrow-button" type="submit" aria-label="將 {{ shift_type.name }} 下移" title="下移" {% if loop.last %}disabled{% endif %}>▼</button>
+          </form>
+        </div>
+        <form class="shift-type-update" method="post" action="{{ url_for('shifts.update_shift_type', shift_type_id=shift_type.id) }}">
+          <label>名稱 <input name="name" value="{{ shift_type.name }}" maxlength="50" required></label>
+          <label>開始 <input type="time" name="start_time" value="{{ shift_type.start_time }}" required></label>
+          <label>結束 <input type="time" name="end_time" value="{{ shift_type.end_time }}" required></label>
+          <label class="checkbox-inline"><input type="checkbox" name="ends_next_day" value="1" {% if shift_type.ends_next_day %}checked{% endif %}>隔天結束</label>
+          <button type="submit">儲存修改</button>
+        </form>
+        <form method="post" action="{{ url_for('shifts.delete_shift_type', shift_type_id=shift_type.id) }}" onsubmit="return confirm('刪除此班別？既有班表不會被刪除。');">
+          <button class="danger" type="submit">刪除</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="muted">目前沒有班別，請先新增班別。</p>
+    {% endfor %}
+  </div>
+  <p class="muted">例如 18:00 到隔天 02:00，請勾選「隔天結束」。修改或刪除班別不會改動已建立班次的名稱與時間。</p>
+</section>
+{% endblock %}

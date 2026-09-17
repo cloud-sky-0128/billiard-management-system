@@ -1,0 +1,30 @@
+﻿<div class="schedule-toolbar">
+  <a class="btn-link month-nav-button" href="{{ url_for(endpoint, month=previous.strftime('%Y-%m'), date=previous.isoformat()) }}" aria-label="上個月" title="上個月">◀</a>
+  <h2>{{ month.strftime('%Y 年 %m 月') }}</h2>
+  <a class="btn-link month-nav-button" href="{{ url_for(endpoint, month=following.strftime('%Y-%m'), date=following.isoformat()) }}" aria-label="下個月" title="下個月">▶</a>
+</div>
+<div class="schedule-grid">
+  {% for weekday in ['一', '二', '三', '四', '五', '六', '日'] %}
+    <div class="schedule-weekday">週{{ weekday }}</div>
+  {% endfor %}
+  {% for week in weeks %}
+    {% for day in week %}
+      {% if day %}
+        <a class="schedule-day {% if day == selected %}is-selected{% endif %}"
+           href="{{ url_for(endpoint, month=month.strftime('%Y-%m'), date=day.isoformat()) }}"
+           {% if day == selected %}aria-current="date"{% endif %}>
+          <strong>{{ day.day }}</strong>
+          {% if calendar_entries is defined %}
+            {% for entry in calendar_entries.get(day.isoformat(), []) %}
+              <span class="schedule-calendar-entry {{ entry.status_class|default('') }}" style="border-left-color: {{ entry.color }}">{{ entry.time }} {{ entry.name }}</span>
+            {% endfor %}
+          {% elif counts.get(day.isoformat(), 0) %}
+            <span>{{ counts[day.isoformat()] }} 筆</span>
+          {% endif %}
+        </a>
+      {% else %}
+        <div class="schedule-day is-empty" aria-hidden="true"></div>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+</div>

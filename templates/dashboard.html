@@ -1,0 +1,70 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <h2>球檯總覽（1 ~ {{ table_count }} 號桌）</h2>
+</section>
+
+<section class="table-grid">
+  {% for table in tables %}
+  <article class="table-card">
+    <header>
+      <h3>
+        <a class="table-title-link" href="{{ url_for('tables.table_detail', table_no=table.table_no) }}">
+          {{ table.table_no }} 號桌
+        </a>
+      </h3>
+      <span class="status-badge status-{{ table.status_class }}">{{ table.status }}</span>
+    </header>
+    <p>模式：{{ table.mode_label }}</p>
+    <p>
+      時間：
+      <strong
+        class="js-timer"
+        data-kind="{{ table.timer_kind }}"
+        data-seconds="{{ table.timer_seconds }}"
+      >{{ table.timer_text }}</strong>
+    </p>
+  </article>
+  {% endfor %}
+</section>
+
+<script>
+(function () {
+  function fmt(sec) {
+    const sign = sec < 0 ? "-" : "";
+    const abs = Math.abs(sec);
+    const h = Math.floor(abs / 3600);
+    const m = Math.floor((abs % 3600) / 60);
+    const s = abs % 60;
+    return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  const timers = document.querySelectorAll(".js-timer");
+  if (!timers.length) return;
+
+  function tick() {
+    timers.forEach((node) => {
+      const kind = node.dataset.kind;
+      if (kind === "idle") return;
+      let sec = Number(node.dataset.seconds || "0");
+      if (Number.isNaN(sec)) sec = 0;
+
+      if (kind === "timed") {
+        sec += 1;
+      } else if (kind === "package") {
+        sec -= 1;
+      }
+      node.dataset.seconds = String(sec);
+
+      if (kind === "package" && sec < 0) {
+        node.textContent = `超時 ${fmt(sec)}`;
+      } else {
+        node.textContent = fmt(sec);
+      }
+    });
+  }
+
+  setInterval(tick, 1000);
+})();
+</script>
+{% endblock %}

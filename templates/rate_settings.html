@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <h2>費率與優惠設定</h2>
+  <p class="muted">每桌可設定自己的計時價格與包台價格；開台後會保留當時費率，不受之後調價影響。</p>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h3>每桌費率</h3><p class="muted">計時價格以每分鐘計算，包台價格以每小時計算。</p></div>
+  </div>
+  <form method="post" action="{{ url_for('settings.update_rate_settings') }}">
+    <div class="settings-grid table-count-setting">
+      <label>球檯總數
+        <input type="number" name="table_count" min="1" max="100" value="{{ table_count }}" required>
+      </label>
+    </div>
+    <div class="table-scroll">
+      <table class="rate-table">
+        <thead><tr><th>球檯</th><th>計時（元／分鐘）</th><th>包台（元／小時）</th><th>允許包台</th></tr></thead>
+        <tbody>
+          {% for rate in table_rates %}
+          <tr>
+            <td><strong>{{ rate.table_no }} 號桌</strong></td>
+            <td><input type="number" name="timed_rate_{{ rate.table_no }}" step="0.1" min="0.1" value="{{ rate.timed_rate_per_min }}" required></td>
+            <td><input type="number" name="package_rate_{{ rate.table_no }}" step="1" min="1" value="{{ rate.package_rate_per_hour }}" required></td>
+            <td>
+              <input type="hidden" name="package_enabled_{{ rate.table_no }}" value="0">
+              <label class="checkbox-inline"><input type="checkbox" name="package_enabled_{{ rate.table_no }}" value="1" {% if rate.package_enabled %}checked{% endif %}>啟用</label>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">增加球檯數量後，新桌會先套用預設價格；儲存後即可在清單中個別調整。</p>
+    <button type="submit">儲存每桌費率</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h3>新增優惠方案</h3>
+  <p class="muted">百分比折扣可限制計時或包台；固定包台價會以每小時優惠價取代原包台費率。有效時段可留空，跨午夜可填 22:00 到 02:00。</p>
+  <form class="discount-setting-form js-discount-form" method="post" action="{{ url_for('settings.add_discount_type') }}">
+    <label class="discount-name-field">優惠名稱 <input name="name" maxlength="100" placeholder="例如：學生優惠" required></label>
+    <label class="discount-method-field">計價方式
+      <select class="js-pricing-method" name="pricing_method">
+        {% for value, label in discount_pricing_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="discount-mode-field">適用開台模式
+      <select class="js-applicable-mode" name="applicable_mode">
+        {% for value, label in discount_mode_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="discount-value-field js-percent-field">收費百分比 <input type="number" name="discount_percent" min="0.1" max="100" step="0.1" value="90" required><small class="muted">90 表示 9 折</small></label>
+    <label class="discount-value-field js-package-field">包台優惠價（元／小時） <input type="number" name="package_rate_per_hour" min="1" step="1" placeholder="例如：120"><small class="muted">只套用球檯費</small></label>
+    <label class="discount-scope-field js-scope-field">套用範圍
+      <select name="discount_scope">
+        {% for value, label in discount_scope_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="discount-time-field">開始時間（選填） <input type="time" name="start_time"></label>
+    <label class="discount-time-field">結束時間（選填） <input type="time" name="end_time"></label>
+    <div class="discount-submit-field">
+      <span class="discount-submit-spacer" aria-hidden="true"></span>
+      <button class="discount-submit" type="submit">新增優惠</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h3>優惠方案</h3>
+  <div class="discount-type-list">
+    {% for discount in discount_types %}
+    <article class="discount-type-editor">
+      <form class="discount-setting-form js-discount-form" method="post" action="{{ url_for('settings.update_discount_type', discount_id=discount.id) }}">
+        <label class="discount-name-field">優惠名稱 <input name="name" maxlength="100" value="{{ discount.name }}" required></label>
+        <label class="discount-method-field">計價方式
+          <select class="js-pricing-method" name="pricing_method">
+            {% for value, label in discount_pricing_options %}<option value="{{ value }}" {% if value == discount.pricing_method %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="discount-mode-field">適用開台模式
+          <select class="js-applicable-mode" name="applicable_mode">
+            {% for value, label in discount_mode_options %}<option value="{{ value }}" {% if value == discount.applicable_mode %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="discount-value-field js-percent-field">收費百分比 <input type="number" name="discount_percent" min="0.1" max="100" step="0.1" value="{{ discount.discount_percent }}"></label>
+        <label class="discount-value-field js-package-field">包台優惠價（元／小時） <input type="number" name="package_rate_per_hour" min="1" step="1" value="{{ discount.package_rate_per_hour or '' }}"></label>
+        <label class="discount-scope-field js-scope-field">套用範圍
+          <select name="discount_scope">
+            {% for value, label in discount_scope_options %}<option value="{{ value }}" {% if value == discount.discount_scope %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="discount-time-field">開始時間 <input type="time" name="start_time" value="{{ discount.start_time }}"></label>
+        <label class="discount-time-field">結束時間 <input type="time" name="end_time" value="{{ discount.end_time }}"></label>
+        <div class="discount-submit-field">
+          <span class="discount-submit-spacer" aria-hidden="true"></span>
+          <button class="discount-submit" type="submit">儲存</button>
+        </div>
+      </form>
+      <form method="post" action="{{ url_for('settings.delete_discount_type', discount_id=discount.id) }}" onsubmit="return confirm('停用這個優惠方案？歷史結帳紀錄不會刪除。');">
+        <button class="danger" type="submit">停用</button>
+      </form>
+    </article>
+    {% else %}
+    <p class="muted">尚未建立優惠方案。新增後，符合有效時段的方案會出現在每桌結帳選單。</p>
+    {% endfor %}
+  </div>
+</section>
+<script>
+document.querySelectorAll('.js-discount-form').forEach(form => {
+  const method = form.querySelector('.js-pricing-method');
+  const percentField = form.querySelector('.js-percent-field');
+  const packageField = form.querySelector('.js-package-field');
+  const percentInput = percentField.querySelector('input');
+  const packageInput = packageField.querySelector('input');
+  const modeSelect = form.querySelector('.js-applicable-mode');
+  const scopeField = form.querySelector('.js-scope-field');
+  const scopeSelect = scopeField.querySelector('select');
+
+  const updatePricingFields = () => {
+    const isPackageRate = method.value === 'package_hourly';
+    percentField.hidden = isPackageRate;
+    percentInput.disabled = isPackageRate;
+    percentInput.required = !isPackageRate;
+    packageField.hidden = !isPackageRate;
+    packageInput.disabled = !isPackageRate;
+    packageInput.required = isPackageRate;
+    modeSelect.disabled = isPackageRate;
+    scopeField.hidden = isPackageRate;
+    scopeSelect.disabled = isPackageRate;
+    if (isPackageRate) {
+      modeSelect.value = 'package';
+      scopeSelect.value = 'table_only';
+    }
+  };
+
+  method.addEventListener('change', updatePricingFields);
+  updatePricingFields();
+});
+</script>
+{% endblock %}

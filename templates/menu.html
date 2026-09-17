@@ -1,0 +1,87 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="two-col">
+  <article class="panel">
+    <h2>新增類別</h2>
+    <form class="inline-form" method="post" action="{{ url_for('menu.add_category') }}">
+      <input type="text" name="name" placeholder="例如：甜點" required>
+      <button type="submit">新增類別</button>
+    </form>
+
+    <h3>現有類別</h3>
+    <div class="category-list">
+      {% for category in categories %}
+      <div class="category-row">
+        <span>{{ category.name }}</span>
+        <form method="post" action="{{ url_for('menu.delete_category', category_id=category.id) }}" onsubmit="return confirm('刪除類別會同步隱藏該類別所有品項，確定要刪除嗎？');">
+          <button type="submit" class="danger">刪除類別</button>
+        </form>
+      </div>
+      {% else %}
+      <p class="muted">目前沒有類別</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <h2>新增品項</h2>
+    <form class="inline-form" method="post" action="{{ url_for('menu.add_menu_item') }}">
+      <select name="category_id" required>
+        {% for category in categories %}
+          <option value="{{ category.id }}">{{ category.name }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="name" placeholder="品項名稱" required>
+      <input type="number" name="price" min="1" step="1" placeholder="價格" required>
+      <button type="submit">新增品項</button>
+    </form>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>菜單清單（可直接修改）</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>類別</th>
+        <th>品項</th>
+        <th>價格</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>
+          <select name="category_id" form="update-item-{{ item.id }}" required>
+            {% for category in categories %}
+              <option value="{{ category.id }}" {% if item.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <input type="text" name="name" value="{{ item.name }}" form="update-item-{{ item.id }}" required>
+        </td>
+        <td>
+          <input type="number" name="price" min="1" step="1" value="{{ item.price|int }}" form="update-item-{{ item.id }}" required>
+        </td>
+        <td>
+          <div class="action-row">
+            <form id="update-item-{{ item.id }}" method="post" action="{{ url_for('menu.update_menu_item', item_id=item.id) }}">
+              <button type="submit">修改</button>
+            </form>
+            <form method="post" action="{{ url_for('menu.delete_menu_item', item_id=item.id) }}" onsubmit="return confirm('確定要刪除這個品項嗎？');">
+              <button type="submit" class="danger">刪除</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4">目前沒有可顯示的品項</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

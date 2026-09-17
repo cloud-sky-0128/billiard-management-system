@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+
+{% macro calendar_item_card(item, return_date, item_types) %}
+  {% set type_info = item_types[item.item_type] %}
+  <article class="calendar-item-card {% if item.status == 'completed' %}is-completed{% endif %}">
+    <div class="calendar-item-heading">
+      <strong>{{ item.title }}</strong>
+      <span class="calendar-item-type" style="border-color: {{ type_info.color }}; color: {{ type_info.color }}">{{ type_info.label }}</span>
+    </div>
+    <div class="calendar-item-meta">
+      {% if item.scheduled_date %}<span>日期：{{ item.scheduled_date }}</span>{% else %}<span>未排日期</span>{% endif %}
+      {% if item.start_time %}<span>時間：{{ item.start_time }}–{{ item.end_time }}</span>{% endif %}
+      {% if item.location %}<span>地點：{{ item.location }}</span>{% endif %}
+    </div>
+    {% if item.note %}<p>備註：{{ item.note }}</p>{% endif %}
+    <div class="calendar-item-actions">
+      <form method="post" action="{{ url_for('reservations.toggle_calendar_item', item_id=item.id) }}">
+        <input type="hidden" name="return_date" value="{{ return_date }}">
+        <button type="submit">{{ '恢復待辦' if item.status == 'completed' else '標示完成' }}</button>
+      </form>
+      <details>
+        <summary>修改</summary>
+        <form class="schedule-form calendar-item-form calendar-item-edit" method="post" action="{{ url_for('reservations.save_calendar_item', item_id=item.id) }}">
+          <input type="hidden" name="return_date" value="{{ return_date }}">
+          <label>類型
+            <select name="item_type" required>
+              {% for value, info in item_types.items() %}<option value="{{ value }}" {% if value == item.item_type %}selected{% endif %}>{{ info.label }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>事項／用途 <input name="title" value="{{ item.title }}" maxlength="120" required></label>
+          <label class="checkbox-inline schedule-full"><input class="js-unscheduled-item" type="checkbox" name="unscheduled" value="1" {% if not item.scheduled_date %}checked{% endif %}>不指定日期，作為純待辦</label>
+          <label>日期（選填） <input type="date" name="scheduled_date" value="{{ item.scheduled_date or '' }}"></label>
+          <label>地點（選填） <input name="location" value="{{ item.location }}" maxlength="120"></label>
+          <label>開始（選填） <input type="time" name="start_time" value="{{ item.start_time }}"></label>
+          <label>結束（選填） <input type="time" name="end_time" value="{{ item.end_time }}"></label>
+          <label class="schedule-full">備註 <input name="note" value="{{ item.note }}" maxlength="500"></label>
+          <button type="submit">儲存修改</button>
+        </form>
+      </details>
+      <form method="post" action="{{ url_for('reservations.delete_calendar_item', item_id=item.id) }}" onsubmit="return confirm('確定刪除這個事項？');">
+        <input type="hidden" name="return_date" value="{{ return_date }}">
+        <button class="danger" type="submit">刪除</button>
+      </form>
+    </div>
+  </article>
+{% endmacro %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h1>行事曆／預約</h1><p class="muted">球檯預約與館內事項分開管理</p></div>
+  </div>
+  {% set endpoint = 'reservations.calendar_page' %}
+  {% include '_schedule_month.html' %}
+  <div class="calendar-legend">
+    <span><i style="background: #D4B483"></i>球檯預約</span>
+    {% for value, info in calendar_item_types.items() %}<span><i style="background: {{ info.color }}"></i>{{ info.label }}</span>{% endfor %}
+  </div>
+</section>
+
+<section class="two-col calendar-create-grid">
+  <article class="panel">
+    <h2>{{ selected.isoformat() }} 新增球檯預約</h2>
+    <form class="schedule-form" method="post" action="{{ url_for('reservations.save_reservation') }}">
+      <label>日期 <input type="date" name="date" value="{{ selected.isoformat() }}" required></label>
+      <label>球檯 <select name="table_no" required>{% for no in range(1, table_count + 1) %}<option value="{{ no }}">{{ no }} 號桌</option>{% endfor %}</select></label>
+      <label>用途 <select name="event_type"><option value="reservation">一般預約</option><option value="course">課程</option><option value="club">社團</option></select></label>
+      <label>姓名／名稱 <input name="guest_name" maxlength="100" required></label>
+      <label>電話 <input name="phone" type="tel" maxlength="40"></label>
+      <label>開始 <input name="start_time" type="time" required></label>
+      <label>結束 <input name="end_time" type="time" required></label>
+      <label>每週重複 <select name="repeat_weeks">{% for weeks in range(1, 25) %}<option value="{{ weeks }}">{{ weeks }} 週</option>{% endfor %}</select></label>
+      <label class="schedule-full">備註 <input name="note" maxlength="500"></label>
+      <button type="submit">儲存預約</button>
+    </form>
+    <p class="muted">同一球檯的預約不可重疊；預約不會自動開桌。</p>
+  </article>
+
+  <article class="panel">
+    <h2>新增行事曆事項／待辦</h2>
+    <form class="schedule-form calendar-item-form" method="post" action="{{ url_for('reservations.save_calendar_item') }}">
+      <input type="hidden" name="return_date" value="{{ selected.isoformat() }}">
+      <label>類型
+        <select name="item_type" required>
+          {% for value, info in calendar_item_types.items() %}<option value="{{ value }}">{{ info.label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>事項／用途 <input name="title" maxlength="120" placeholder="例如：冷氣檢修" required></label>
+      <label class="checkbox-inline schedule-full"><input class="js-unscheduled-item" type="checkbox" name="unscheduled" value="1">不指定日期，作為純待辦</label>
+      <label>日期（選填） <input type="date" name="scheduled_date" value="{{ selected.isoformat() }}"></label>
+      <label>地點（選填） <input name="location" maxlength="120" placeholder="例如：吧檯旁、3 號桌區"></label>
+      <label>開始（選填） <input type="time" name="start_time"></label>
+      <label>結束（選填） <input type="time" name="end_time"></label>
+      <label class="schedule-full">備註 <input name="note" maxlength="500"></label>
+      <button type="submit">新增事項</button>
+    </form>
+    <p class="muted">日期可以清空。沒有日期的項目會放入未排日期待辦；若填寫時間，開始與結束需一起填寫。</p>
+  </article>
+</section>
+
+<section class="two-col calendar-day-grid">
+  <article class="panel">
+    <h2>{{ selected.isoformat() }} 球檯預約</h2>
+    {% for item in reservations %}
+      <div class="schedule-entry">
+        <strong>{{ item.start_time[11:16] }}–{{ item.end_time[11:16] }} · {{ item.table_no }} 號桌</strong>
+        <span>{{ item.guest_name }} · {{ {'reservation': '一般預約', 'course': '課程', 'club': '社團'}[item.event_type] }}</span>
+        {% if item.phone %}<span>電話：{{ item.phone }}</span>{% endif %}
+        {% if item.note %}<span>備註：{{ item.note }}</span>{% endif %}
+        <details>
+          <summary>修改預約</summary>
+          <form class="schedule-form" method="post" action="{{ url_for('reservations.save_reservation', reservation_id=item.id) }}">
+            <label>日期 <input type="date" name="date" value="{{ item.start_time[:10] }}" required></label>
+            <label>球檯 <select name="table_no" required>{% for no in range(1, table_count + 1) %}<option value="{{ no }}" {% if no == item.table_no %}selected{% endif %}>{{ no }} 號桌</option>{% endfor %}</select></label>
+            <label>用途 <select name="event_type">{% for value, label in [('reservation', '一般預約'), ('course', '課程'), ('club', '社團')] %}<option value="{{ value }}" {% if value == item.event_type %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+            <label>姓名／名稱 <input name="guest_name" value="{{ item.guest_name }}" maxlength="100" required></label>
+            <label>電話 <input name="phone" type="tel" value="{{ item.phone }}" maxlength="40"></label>
+            <label>開始 <input name="start_time" type="time" value="{{ item.start_time[11:16] }}" required></label>
+            <label>結束 <input name="end_time" type="time" value="{{ item.end_time[11:16] }}" required></label>
+            <label class="schedule-full">備註 <input name="note" value="{{ item.note }}" maxlength="500"></label>
+            <button type="submit">更新</button>
+          </form>
+        </details>
+        <form method="post" action="{{ url_for('reservations.cancel_reservation', reservation_id=item.id) }}" onsubmit="return confirm('確定取消這筆預約？');">
+          <input type="hidden" name="date" value="{{ selected.isoformat() }}">
+          <button type="submit" class="danger">取消預約</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="muted">這一天沒有球檯預約。</p>
+    {% endfor %}
+  </article>
+
+  <article class="panel">
+    <h2>{{ selected.isoformat() }} 行事曆事項</h2>
+    <div class="calendar-item-list">
+      {% for item in calendar_items %}
+        {{ calendar_item_card(item, selected.isoformat(), calendar_item_types) }}
+      {% else %}
+        <p class="muted">這一天沒有其他事項。</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div><h2>未排日期待辦</h2><p class="muted">尚未決定處理日期的館內事項</p></div>
+    <span class="status-badge">{{ unscheduled_items|length }} 項待處理</span>
+  </div>
+  <div class="calendar-item-list calendar-todo-list">
+    {% for item in unscheduled_items %}
+      {{ calendar_item_card(item, selected.isoformat(), calendar_item_types) }}
+    {% else %}
+      <p class="muted">目前沒有未排日期待辦。</p>
+    {% endfor %}
+  </div>
+  {% if completed_unscheduled_items %}
+    <details class="completed-todo-section">
+      <summary>查看最近完成的待辦（{{ completed_unscheduled_items|length }}）</summary>
+      <div class="calendar-item-list calendar-todo-list">
+        {% for item in completed_unscheduled_items %}
+          {{ calendar_item_card(item, selected.isoformat(), calendar_item_types) }}
+        {% endfor %}
+      </div>
+    </details>
+  {% endif %}
+</section>
+<script>
+document.querySelectorAll('.calendar-item-form').forEach(form => {
+  const toggle = form.querySelector('.js-unscheduled-item');
+  const dateInput = form.querySelector('[name="scheduled_date"]');
+  const startInput = form.querySelector('[name="start_time"]');
+  const endInput = form.querySelector('[name="end_time"]');
+  const updateFields = () => {
+    const disabled = toggle.checked;
+    [dateInput, startInput, endInput].forEach(input => { input.disabled = disabled; });
+  };
+  toggle.addEventListener('change', updateFields);
+  updateFields();
+});
+</script>
+{% endblock %}

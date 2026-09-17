@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <h1>整體設定</h1>
+  <p class="muted">管理系統設定與高風險維護操作</p>
+</section>
+
+<section class="settings-links">
+  <a class="settings-link-card" href="{{ url_for('settings.rate_settings_page') }}"><strong>費率與球檯</strong><span>球檯數量、計時及包台費率</span></a>
+  <a class="settings-link-card" href="{{ url_for('shifts.shift_settings_page') }}"><strong>排班設定</strong><span>員工名單與班別管理</span></a>
+  <a class="settings-link-card" href="{{ url_for('finance.finance_page') }}"><strong>收支管理</strong><span>實收、支出與月報</span></a>
+</section>
+
+<section class="panel danger-zone">
+  <h2>危險操作：清除測試營運資料</h2>
+  <p>適合開發測試結束後使用。這會永久刪除：</p>
+  <ul>
+    <li>球檯開台、結帳與訂單紀錄</li>
+    <li>每日實際實收紀錄</li>
+    <li>所有支出紀錄</li>
+    <li>預約、行事曆事項與班表</li>
+  </ul>
+  <p>員工、班別、菜單、類別、桌數與費率都會保留。刪除前會自動備份完整資料庫。</p>
+  <div class="reset-counts">
+    <span>已結帳：{{ counts.closed_sessions }}</span><span>開台中：{{ counts.active_sessions }}</span>
+    <span>訂單：{{ counts.orders }}</span><span>實收日數：{{ counts.cash_records }}</span><span>支出：{{ counts.expenses }}</span>
+    <span>預約：{{ counts.reservations }}</span><span>行事曆事項：{{ counts.calendar_items }}</span><span>班次：{{ counts.shifts }}</span>
+    <span>保留員工：{{ counts.employees }}</span><span>保留班別：{{ counts.shift_types }}</span><span>保留菜單品項：{{ counts.menu_items }}</span>
+  </div>
+  {% if counts.active_sessions %}<p class="finance-warning">目前仍有 {{ counts.active_sessions }} 桌開台中，系統不允許清除。</p>{% endif %}
+  <form class="reset-form" method="post" action="{{ url_for('settings.reset_test_data') }}" onsubmit="return confirm('最後確認：真的要刪除營收、訂單、實收、支出、預約、行事曆事項與班表資料嗎？');">
+    <label class="checkbox-inline"><input type="checkbox" name="confirm_scope" value="yes" required>我了解指定的營運資料會被清除，而且知道刪除前會建立備份</label>
+    <label>輸入確認文字 <code>{{ confirmation_phrase }}</code><input name="confirmation" autocomplete="off" required></label>
+    <label>輸入今天日期 <code>{{ today }}</code><input type="date" name="confirmation_date" required></label>
+    <button type="submit" class="danger" {% if counts.active_sessions %}disabled{% endif %}>建立備份並永久清除測試資料</button>
+  </form>
+</section>
+{% endblock %}

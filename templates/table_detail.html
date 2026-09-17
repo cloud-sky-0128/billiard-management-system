@@ -1,0 +1,261 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="panel panel-head">
+  <div>
+    <h2>{{ table_no }} 號桌細項</h2>
+  </div>
+  <div>
+    <a class="btn-link" href="{{ url_for('tables.dashboard') }}">回總覽</a>
+  </div>
+</section>
+
+{% if runtime %}
+<section class="panel">
+  <h3>目前狀態：開台（{{ runtime.mode_label }}）</h3>
+  <p>開台時間：{{ runtime.start_dt.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+  {% if runtime.timer_kind == 'package' %}
+  <p>本次費率：每小時 {{ runtime.session.rate_per_hour|int }} 元</p>
+  {% else %}
+  <p>本次費率：每分鐘 {{ runtime.session.rate_per_min }} 元</p>
+  {% endif %}
+  <p>
+    {% if runtime.timer_kind == 'package' %}
+      剩餘時間：
+    {% else %}
+      計時時間：
+    {% endif %}
+    <strong class="js-timer" data-kind="{{ runtime.timer_kind }}" data-seconds="{{ runtime.timer_seconds }}">{{ runtime.timer_text }}</strong>
+  </p>
+  {% if runtime.timer_kind == 'package' %}
+  <p>包台總時數：{{ runtime.session.package_hours }} 小時</p>
+  <form id="extend-form" class="inline-form" method="post" action="{{ url_for('tables.extend_package_session', session_id=runtime.session.id) }}">
+    <label>中途加時</label>
+    <input id="extra-hours-input" type="number" name="extra_hours" min="1" max="24" value="1" required>
+    <span class="muted">小時</span>
+    <button type="submit">加入時數</button>
+  </form>
+  <div class="quick-extend">
+    <button type="button" data-add="1">+1hr</button>
+    <button type="button" data-add="2">+2hr</button>
+    <button type="button" data-add="3">+3hr</button>
+  </div>
+  {% endif %}
+  <p>球檯費（目前）：{{ runtime.table_fee|int }} 元</p>
+  <p>餐點/飲料費（目前）：{{ runtime.food_total|int }} 元</p>
+  <p>目前總額：<strong>{{ runtime.gross_total|int }} 元</strong></p>
+</section>
+
+<section class="two-col">
+  <article class="panel">
+    <h3>點餐</h3>
+    <form class="inline-form" method="get" action="{{ url_for('tables.table_detail', table_no=table_no) }}">
+      <label>分類</label>
+      <select name="category_id" onchange="this.form.submit()">
+        {% for category in categories %}
+          <option value="{{ category.id }}" {% if selected_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button type="submit">切換分類</button></noscript>
+    </form>
+
+    {% if selected_items %}
+    <form class="order-form-grid" method="post" action="{{ url_for('tables.add_order') }}">
+      <input type="hidden" name="session_id" value="{{ runtime.session.id }}">
+      <input type="hidden" name="category_id" value="{{ selected_category_id or '' }}">
+
+      <div class="field-group">
+        <label>品項</label>
+        <select name="item_id" required>
+          {% for item in selected_items %}
+            <option value="{{ item.id }}">{{ item.name }}（{{ item.price|int }} 元）</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label>數量</label>
+        <input type="number" name="quantity" min="1" value="1" required>
+      </div>
+
+      {% if selected_category_is_drink %}
+      <div class="field-group">
+        <label>甜度</label>
+        <select name="sugar_level" required>
+          {% for sugar in sugar_options %}
+            <option value="{{ sugar }}">{{ sugar }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label>溫度/冰塊</label>
+        <select name="ice_level" required>
+          {% for ice in ice_options %}
+            <option value="{{ ice }}">{{ ice }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <div class="order-submit">
+        <button type="submit">新增餐點</button>
+      </div>
+    </form>
+    {% else %}
+    <p class="muted">此分類目前沒有可點品項。</p>
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h3>結帳</h3>
+    <form class="order-form-grid" method="post" action="{{ url_for('tables.end_session', session_id=runtime.session.id) }}">
+      <div class="field-group schedule-full">
+        <label>優惠類別</label>
+        <select name="discount_type_id">
+          <option value="">不套用方案／使用下方自訂折扣</option>
+          {% for discount in discount_types %}
+            <option value="{{ discount.id }}">{{ discount.name }} · {% if discount.pricing_method == 'package_hourly' %}包台每小時 {{ discount.package_rate_per_hour|int }} 元{% else %}{{ discount.discount_percent / 10 }} 折{% if discount.applicable_mode == 'timed' %} · 只限計時{% elif discount.applicable_mode == 'package' %} · 只限包台{% endif %}{% endif %}{% if discount.start_time %} · {{ discount.start_time }}–{{ discount.end_time }}{% endif %}</option>
+          {% endfor %}
+        </select>
+        {% if not discount_types %}<span class="muted">目前沒有符合此時段的優惠方案，可在費率設定新增。</span>{% endif %}
+      </div>
+      <div class="field-group">
+        <label>自訂折扣</label>
+        <select name="discount_percent">
+          {% for d in discount_options %}
+            <option value="{{ d }}">
+              {% if d == 100 %}
+                原價
+              {% elif d % 10 == 0 %}
+                {{ (d // 10)|int }} 折
+              {% else %}
+                {{ '%.1f'|format(d / 10) }} 折
+              {% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label>自訂折扣套用</label>
+        <select name="discount_scope">
+          {% for scope_value, scope_label in discount_scope_options %}
+            <option value="{{ scope_value }}">{{ scope_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="order-submit">
+        <button class="danger" type="submit">結束並結帳</button>
+      </div>
+    </form>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>已點餐紀錄</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>品項</th>
+        <th>甜度</th>
+        <th>溫度/冰塊</th>
+        <th>數量</th>
+        <th>小計</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for order in runtime.orders %}
+      <tr>
+        <td>{{ order.item_name }}</td>
+        <td>{{ order.sugar_level or '-' }}</td>
+        <td>{{ order.ice_level or '-' }}</td>
+        <td>{{ order.quantity }}</td>
+        <td>{{ order.subtotal|int }} 元</td>
+        <td>
+          <form class="inline-form" method="post" action="{{ url_for('tables.delete_order', order_id=order.id) }}" onsubmit="return confirm('確定刪除這筆訂單嗎？');">
+            <input type="hidden" name="category_id" value="{{ selected_category_id or '' }}">
+            <button type="submit" class="danger">刪除</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6">尚未點餐</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="panel">
+  <h3>目前狀態：關台</h3>
+  <p>計時費率：每分鐘 {{ table_rate.timed_rate_per_min }} 元</p>
+  <p>包台費率：每小時 {{ table_rate.package_rate_per_hour|int }} 元</p>
+
+  <form class="inline-form" method="post" action="{{ url_for('tables.start_session') }}">
+    <input type="hidden" name="table_no" value="{{ table_no }}">
+    <input type="hidden" name="mode" value="timed">
+    <button type="submit">開始計時</button>
+  </form>
+
+  {% if can_package %}
+  <form class="inline-form" method="post" action="{{ url_for('tables.start_session') }}">
+    <input type="hidden" name="table_no" value="{{ table_no }}">
+    <input type="hidden" name="mode" value="package">
+    <label>包台時數</label>
+    <input type="number" name="package_hours" min="1" value="1" required>
+    <button type="submit">開始包台</button>
+  </form>
+  {% else %}
+  <p class="muted">此桌目前未啟用包台，可在費率設定中開啟。</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<script>
+(function () {
+  function fmt(sec) {
+    const sign = sec < 0 ? "-" : "";
+    const abs = Math.abs(sec);
+    const h = Math.floor(abs / 3600);
+    const m = Math.floor((abs % 3600) / 60);
+    const s = abs % 60;
+    return `${sign}${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  const node = document.querySelector(".js-timer");
+  if (node) {
+    setInterval(() => {
+      const kind = node.dataset.kind;
+      let sec = Number(node.dataset.seconds || "0");
+      if (Number.isNaN(sec)) sec = 0;
+      if (kind === "timed") {
+        sec += 1;
+        node.textContent = fmt(sec);
+      } else if (kind === "package") {
+        sec -= 1;
+        node.textContent = sec < 0 ? `超時 ${fmt(sec)}` : fmt(sec);
+      }
+      node.dataset.seconds = String(sec);
+    }, 1000);
+  }
+
+  const extraInput = document.querySelector("#extra-hours-input");
+  const quickButtons = document.querySelectorAll(".quick-extend button[data-add]");
+  if (extraInput && quickButtons.length) {
+    quickButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const step = Number(btn.dataset.add || "0");
+        const current = Number(extraInput.value || "0");
+        let next = (Number.isFinite(current) ? current : 0) + (Number.isFinite(step) ? step : 0);
+        next = Math.max(1, Math.min(24, next));
+        extraInput.value = String(next);
+        extraInput.focus();
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

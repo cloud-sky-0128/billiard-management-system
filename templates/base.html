@@ -1,0 +1,37 @@
+﻿<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or '撞球館管理系統' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='20260917-3') }}">
+</head>
+<body>
+  <header class="topbar">
+    <h1>撞球館管理系統</h1>
+    <nav>
+      <a href="{{ url_for('tables.dashboard') }}">球檯總覽</a>
+      <a href="{{ url_for('reservations.calendar_page') }}">行事曆／預約</a>
+      <a href="{{ url_for('shifts.shifts_page') }}">班表</a>
+      <a href="{{ url_for('menu.menu_page') }}">餐點管理</a>
+      <a href="{{ url_for('stats.stats_page') }}">營業統計</a>
+      <a href="{{ url_for('finance.finance_page') }}">收支管理</a>
+      <a href="{{ url_for('settings.general_settings_page') }}">整體設定</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <section class="flash-list">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

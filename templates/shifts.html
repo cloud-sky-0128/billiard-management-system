@@ -1,0 +1,204 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div><h1>班表</h1><p class="muted">月曆直接顯示每日班次</p></div>
+    <div class="action-row">
+      <a class="btn-link" href="{{ url_for('shifts.shift_settings_page') }}">排班設定</a>
+      <button type="button" id="export-shifts">下載月曆班表 PNG</button>
+    </div>
+  </div>
+  {% set endpoint = 'shifts.shifts_page' %}
+  {% include '_schedule_month.html' %}
+</section>
+
+<section class="two-col shift-management">
+  <article class="panel">
+    <h2>{{ month.strftime('%Y 年 %m 月') }} 批次排班</h2>
+    <form class="schedule-form" method="post" action="{{ url_for('shifts.save_shift') }}">
+      <input type="hidden" name="date" value="{{ selected.isoformat() }}">
+      <label>員工
+        <select name="employee_id" required {% if not employees %}disabled{% endif %}>
+          {% for employee in employees %}<option value="{{ employee.id }}">{{ employee.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>班別
+        <select name="shift_type_id" id="shift-type" class="js-shift-type-select" required {% if not shift_types %}disabled{% endif %}>
+          {% for shift_type in shift_types %}<option value="{{ shift_type.id }}">{{ shift_type.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>開始 <input id="shift-start" name="start_time" type="time" value="{{ shift_types[0].start_time if shift_types else '' }}" required></label>
+      <label>結束 <span class="muted shift-end-hint">{{ '隔天' if shift_types and shift_types[0].ends_next_day else '當天' }}</span><input id="shift-end" name="end_time" type="time" value="{{ shift_types[0].end_time if shift_types else '' }}" required></label>
+      <fieldset class="schedule-full date-picker-grid">
+        <legend>排班日期（可複選）</legend>
+        <div class="date-picker-actions">
+          <button type="button" id="select-all-days">全選整月</button>
+          <button type="button" id="clear-all-days">全部取消</button>
+          <span class="muted" id="selected-day-count">已選 0 天</span>
+        </div>
+        {% for weekday in ['一', '二', '三', '四', '五', '六', '日'] %}
+          <div class="date-picker-weekday">週{{ weekday }}</div>
+        {% endfor %}
+        {% for week in weeks %}
+          {% for day in week %}
+            {% if day %}
+              <label class="date-option">
+                <input type="checkbox" name="dates" value="{{ day.isoformat() }}" {% if day == selected %}checked{% endif %}>
+                <span>{{ day.day }}<small>{{ ['一','二','三','四','五','六','日'][day.weekday()] }}</small></span>
+              </label>
+            {% else %}
+              <div class="date-option is-empty" aria-hidden="true"></div>
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+      </fieldset>
+      <label class="schedule-full">備註 <input name="note" maxlength="500"></label>
+      <button type="submit" {% if not employees or not shift_types %}disabled{% endif %}>一次建立所選日期</button>
+      {% if not shift_types %}<p class="muted schedule-full">請先到排班設定新增班別。</p>{% endif %}
+    </form>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>{{ selected.isoformat() }} 班次</h2>
+  <div class="day-shift-list">
+    {% for shift in shifts %}
+      <article class="schedule-entry">
+        <strong>{{ shift.start_time[11:16] }}–{{ shift.end_time[11:16] }}{% if shift.end_time[:10] != shift.start_time[:10] %}（隔天）{% endif %} · {{ shift.staff_name }}</strong>
+        <span class="shift-type-badge">{{ shift.shift_type_label }}</span>
+        {% if shift.note %}<span>備註：{{ shift.note }}</span>{% endif %}
+        <details>
+          <summary>修改班次</summary>
+          <form class="schedule-form" method="post" action="{{ url_for('shifts.save_shift', shift_id=shift.id) }}">
+            <label>日期 <input name="date" type="date" value="{{ shift.start_time[:10] }}" required></label>
+            <label>員工
+              <select name="employee_id" required>
+                {% for employee in employees %}<option value="{{ employee.id }}" {% if employee.id == shift.employee_id %}selected{% endif %}>{{ employee.name }}</option>{% endfor %}
+              </select>
+            </label>
+            <label>班別
+              <select name="shift_type_id" class="js-shift-type-select" required>
+                {% if shift.shift_type_id not in shift_types | map(attribute='id') | list %}
+                  <option value="" selected disabled>{{ shift.shift_type_label }}（已刪除）</option>
+                {% endif %}
+                {% for shift_type in shift_types %}<option value="{{ shift_type.id }}" {% if shift_type.id == shift.shift_type_id %}selected{% endif %}>{{ shift_type.name }}</option>{% endfor %}
+              </select>
+            </label>
+            <label>開始 <input name="start_time" type="time" value="{{ shift.start_time[11:16] }}" required></label>
+            <label>結束 <span class="muted shift-end-hint">{{ '隔天' if shift.end_time[:10] != shift.start_time[:10] else '當天' }}</span><input name="end_time" type="time" value="{{ shift.end_time[11:16] }}" required></label>
+            <label class="schedule-full">備註 <input name="note" value="{{ shift.note }}" maxlength="500"></label>
+            <button type="submit">更新</button>
+          </form>
+        </details>
+        <form method="post" action="{{ url_for('shifts.delete_shift', shift_id=shift.id) }}" onsubmit="return confirm('確定刪除此班次？');">
+          <input type="hidden" name="date" value="{{ selected.isoformat() }}">
+          <button type="submit" class="danger">刪除班次</button>
+        </form>
+      </article>
+    {% else %}
+      <p class="muted">這一天沒有排班。</p>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+(() => {
+  const shiftTypes = Object.fromEntries(
+    {{ shift_type_options | tojson }}.map(item => [String(item.id), item])
+  );
+  document.querySelectorAll('.js-shift-type-select').forEach(typeSelect => {
+    typeSelect.addEventListener('change', () => {
+      const selected = shiftTypes[typeSelect.value];
+      if (!selected) return;
+      const form = typeSelect.closest('form');
+      form.querySelector('[name="start_time"]').value = selected.start_time;
+      form.querySelector('[name="end_time"]').value = selected.end_time;
+      form.querySelector('.shift-end-hint').textContent = selected.ends_next_day ? '隔天' : '當天';
+    });
+  });
+
+  const datePicker = document.querySelector('.date-picker-grid');
+  const dateCheckboxes = Array.from(datePicker.querySelectorAll('input[name="dates"]'));
+  const selectedDayCount = document.getElementById('selected-day-count');
+  const updateSelectedDayCount = () => {
+    const count = dateCheckboxes.filter(checkbox => checkbox.checked).length;
+    selectedDayCount.textContent = `已選 ${count} 天`;
+  };
+  document.getElementById('select-all-days').addEventListener('click', () => {
+    dateCheckboxes.forEach(checkbox => { checkbox.checked = true; });
+    updateSelectedDayCount();
+  });
+  document.getElementById('clear-all-days').addEventListener('click', () => {
+    dateCheckboxes.forEach(checkbox => { checkbox.checked = false; });
+    updateSelectedDayCount();
+  });
+  dateCheckboxes.forEach(checkbox => checkbox.addEventListener('change', updateSelectedDayCount));
+  updateSelectedDayCount();
+
+  const entries = {{ calendar_entries | tojson }};
+  const year = {{ month.year }};
+  const monthIndex = {{ month.month - 1 }};
+  document.getElementById('export-shifts').addEventListener('click', () => {
+    const width = 1400;
+    const headerHeight = 150;
+    const weekdayHeight = 54;
+    const rowHeight = 190;
+    const firstWeekday = new Date(year, monthIndex, 1).getDay();
+    const mondayOffset = (firstWeekday + 6) % 7;
+    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    const rowCount = Math.ceil((mondayOffset + daysInMonth) / 7);
+    const height = headerHeight + weekdayHeight + rowCount * rowHeight + 30;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * 2;
+    canvas.height = height * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
+    ctx.fillStyle = '#f3efe5';
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = '#172128';
+    ctx.fillRect(0, 0, width, headerHeight);
+    ctx.fillStyle = '#f3efe5';
+    ctx.font = 'bold 42px "Microsoft JhengHei", sans-serif';
+    ctx.fillText(`${year} 年 ${String(monthIndex + 1).padStart(2, '0')} 月班表`, 46, 82);
+    ctx.font = '20px "Microsoft JhengHei", sans-serif';
+    ctx.fillText('撞球館員工排班', 48, 120);
+
+    const weekdays = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+    const cellWidth = width / 7;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#6e593b';
+    ctx.font = 'bold 20px "Microsoft JhengHei", sans-serif';
+    weekdays.forEach((label, index) => ctx.fillText(label, index * cellWidth + cellWidth / 2, headerHeight + 35));
+    ctx.textAlign = 'left';
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const position = mondayOffset + day - 1;
+      const column = position % 7;
+      const row = Math.floor(position / 7);
+      const x = column * cellWidth;
+      const y = headerHeight + weekdayHeight + row * rowHeight;
+      ctx.strokeStyle = '#b8ad9c';
+      ctx.strokeRect(x, y, cellWidth, rowHeight);
+      ctx.fillStyle = '#172128';
+      ctx.font = 'bold 22px "Microsoft JhengHei", sans-serif';
+      ctx.fillText(String(day), x + 12, y + 30);
+      const key = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const dayEntries = entries[key] || [];
+      ctx.font = '17px "Microsoft JhengHei", sans-serif';
+      dayEntries.slice(0, 6).forEach((entry, index) => {
+        ctx.fillStyle = entry.color || '#8a5a36';
+        ctx.fillText(`${entry.time} ${entry.name}`, x + 12, y + 62 + index * 23, cellWidth - 22);
+      });
+      if (dayEntries.length > 6) {
+        ctx.fillStyle = '#6b6b6b';
+        ctx.fillText(`另有 ${dayEntries.length - 6} 筆`, x + 12, y + 177);
+      }
+    }
+    const link = document.createElement('a');
+    link.download = `班表-${year}-${String(monthIndex + 1).padStart(2, '0')}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+})();
+</script>
+{% endblock %}
