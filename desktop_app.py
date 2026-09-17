@@ -54,6 +54,15 @@ def pause_after_error() -> None:
             pass
 
 
+def show_startup_error(error: Exception) -> None:
+    message = f"撞球館管理系統啟動失敗：\n\n{error}"
+    print(message)
+    if os.name == "nt" and getattr(sys, "frozen", False):
+        ctypes.windll.user32.MessageBoxW(None, message, "BilliardManager", 0x10)
+        return
+    pause_after_error()
+
+
 def main() -> int:
     try:
         _mutex_handle, already_running = acquire_windows_mutex()
@@ -68,8 +77,7 @@ def main() -> int:
         app = create_app()
         server = create_server(app, host=HOST, port=port, threads=4)
     except Exception as exc:
-        print(f"撞球館管理系統啟動失敗：{exc}")
-        pause_after_error()
+        show_startup_error(exc)
         return 1
 
     print("撞球館管理系統已啟動")

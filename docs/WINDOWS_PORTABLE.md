@@ -17,7 +17,7 @@ GitHub Releases 下載，再選擇「其他資訊」及「仍要執行」。第�
 資料保存位置
 ------------
 
-資料不會放在程式資料夾，而是保存在：
+資料預設不會放在程式資料夾，而是保存在：
 
 %LOCALAPPDATA%\BilliardManager\billiard.db
 
@@ -25,14 +25,19 @@ GitHub Releases 下載，再選擇「其他資訊」及「仍要執行」。第�
 
 %LOCALAPPDATA%\BilliardManager\backups
 
-因此更新程式時，可以刪除舊的程式資料夾並解壓縮新版，原本資料仍會保留。
-若要完整移除所有資料，請在程式關閉後自行刪除上述 BilliardManager 資料夾。
+若 Windows 不允許寫入上述位置，程式會自動改存到解壓縮資料夾內的
+`BilliardManager\data`。使用預設位置時可直接替換程式；若程式內出現
+`data` 資料夾，更新前必須先保留該資料夾。
+
+若要完整移除所有資料，請在程式關閉後刪除 `%LOCALAPPDATA%\BilliardManager`
+及解壓縮目錄內的 `BilliardManager\data`（若存在）。
 
 常見問題
 --------
 
 - 瀏覽器沒有自動開啟：手動輸入 http://127.0.0.1:8765。
-- 網址無法連線：確認 BilliardManager.exe 的黑色視窗仍在執行。
+- 網址無法連線：確認 `BilliardManager.exe` 的黑色視窗仍在執行，並確認網址是 `http://127.0.0.1:8765`，不是開發版使用的 `5000`。
+- 啟動失敗：新版會直接顯示錯誤對話框；請記下完整訊息再回報。
 - 顯示連接埠被使用：先關閉另一個 BilliardManager，再重新執行。
 - 防毒軟體掃描較久：免安裝程式第一次執行時可能需要等待。
 

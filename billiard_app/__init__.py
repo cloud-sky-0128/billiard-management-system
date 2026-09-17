@@ -12,19 +12,35 @@ from .db import init_app as init_database
 from .money import format_cents
 
 
+def _ensure_writable_directory(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    probe = directory / f".write-test-{os.getpid()}-{secrets.token_hex(4)}"
+    try:
+        probe.write_bytes(b"")
+    finally:
+        probe.unlink(missing_ok=True)
+
+
 def default_database_path() -> Path:
     configured_path = os.environ.get("BILLIARD_DATABASE", "").strip()
     if configured_path:
         return Path(configured_path).expanduser().resolve()
     if getattr(sys, "frozen", False):
         local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
-        data_directory = (
+        primary_directory = (
             Path(local_app_data) / "BilliardManager"
             if local_app_data
             else Path.home() / ".billiard-manager"
         )
-        data_directory.mkdir(parents=True, exist_ok=True)
-        return data_directory / "billiard.db"
+        fallback_directory = Path(sys.executable).resolve().parent / "data"
+        errors = []
+        for data_directory in dict.fromkeys((primary_directory, fallback_directory)):
+            try:
+                _ensure_writable_directory(data_directory)
+                return data_directory / "billiard.db"
+            except OSError as exc:
+                errors.append(f"{data_directory}: {exc}")
+        raise OSError("找不到可寫入的資料夾。" + "；".join(errors))
     return PROJECT_ROOT / "billiard.db"
 
 

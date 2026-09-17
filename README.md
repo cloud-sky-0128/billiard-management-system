@@ -335,7 +335,7 @@ python app.py
 
 程式執行期間需保留黑色視窗；關閉視窗就會停止系統。Windows 第一次執行可能出現 SmartScreen 警告，請先確認檔案來自本專案的 GitHub Releases，再選擇「其他資訊」及「仍要執行」。
 
-每台電腦的資料獨立保存在 `%LOCALAPPDATA%\BilliardManager\billiard.db`。替換成新版程式不會刪除原本資料；完整說明也包含在 ZIP 的 `README.txt`。
+每台電腦的資料預設獨立保存在 `%LOCALAPPDATA%\BilliardManager\billiard.db`。若該位置無法寫入，程式會自動改用解壓縮資料夾內的 `BilliardManager\data`。替換成新版程式不會刪除原本資料；完整說明也包含在 ZIP 的 `README.txt`。
 
 ### 方法二：朋友從原始碼執行
 

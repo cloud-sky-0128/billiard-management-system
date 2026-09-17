@@ -68,6 +68,27 @@ class BilliardAppTestCase(unittest.TestCase):
                 self.assertTrue(expected.parent.is_dir())
         self.assertEqual(application_url(8765), "http://127.0.0.1:8765")
 
+    def test_desktop_database_falls_back_beside_executable(self):
+        local_app_data = Path(self.temp_directory.name) / "blocked-local-app-data"
+        executable = Path(self.temp_directory.name) / "BilliardManager" / "BilliardManager.exe"
+
+        def allow_only_portable_data(directory):
+            if directory == local_app_data / "BilliardManager":
+                raise PermissionError("access denied")
+            directory.mkdir(parents=True, exist_ok=True)
+
+        with (
+            patch.dict(
+                os.environ,
+                {"BILLIARD_DATABASE": "", "LOCALAPPDATA": str(local_app_data)},
+            ),
+            patch.object(sys, "frozen", True, create=True),
+            patch.object(sys, "executable", str(executable)),
+            patch("billiard_app._ensure_writable_directory", side_effect=allow_only_portable_data),
+        ):
+            expected = executable.parent / "data" / "billiard.db"
+            self.assertEqual(default_database_path(), expected)
+
     def test_shift_date_picker_keeps_monday_to_sunday_columns(self):
         html = self.client.get(
             "/shifts?month=2026-09&date=2026-09-17"
