@@ -1,3 +1,5 @@
+import os
+import sys
 import tempfile
 import threading
 import time
@@ -6,7 +8,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from billiard_app import create_app
+from billiard_app import create_app, default_database_path
 from billiard_app.db import get_db
 from billiard_app.money import format_cents, percentage_of_cents, to_cents
 from billiard_app.services.billing import (
@@ -15,6 +17,7 @@ from billiard_app.services.billing import (
     discount_type_is_available,
     session_food_total,
 )
+from desktop_app import application_url
 
 
 class BilliardAppTestCase(unittest.TestCase):
@@ -46,6 +49,24 @@ class BilliardAppTestCase(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(response.headers["X-Frame-Options"], "SAMEORIGIN")
+
+    def test_desktop_paths_and_url(self):
+        configured_database = Path(self.temp_directory.name) / "configured.db"
+        with patch.dict(
+            os.environ,
+            {"BILLIARD_DATABASE": str(configured_database)},
+        ):
+            self.assertEqual(default_database_path(), configured_database.resolve())
+
+        with patch.dict(
+            os.environ,
+            {"BILLIARD_DATABASE": "", "LOCALAPPDATA": self.temp_directory.name},
+        ):
+            with patch.object(sys, "frozen", True, create=True):
+                expected = Path(self.temp_directory.name) / "BilliardManager" / "billiard.db"
+                self.assertEqual(default_database_path(), expected)
+                self.assertTrue(expected.parent.is_dir())
+        self.assertEqual(application_url(8765), "http://127.0.0.1:8765")
 
     def test_shift_date_picker_keeps_monday_to_sunday_columns(self):
         html = self.client.get(

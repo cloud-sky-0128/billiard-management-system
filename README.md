@@ -62,6 +62,7 @@
 - **Frontend:** HTML、CSS、Jinja2、Vanilla JavaScript、Canvas
 - **Database:** SQLite、SQL constraints、foreign keys、partial unique index
 - **Testing:** Python `unittest`、Flask test client、temporary SQLite database
+- **Desktop packaging:** Waitress、PyInstaller、GitHub Actions
 - **Architecture:** Server-side rendering、service layer、feature-based Blueprint modules
 
 ## 系統架構
@@ -278,7 +279,7 @@ sequenceDiagram
 python -m unittest discover -s tests -v
 ```
 
-目前共有 **25 項自動化測試**，測試使用暫存 SQLite，不會修改正式的 `billiard.db`。涵蓋範圍包括：
+目前共有 **26 項自動化測試**，測試使用暫存 SQLite，不會修改正式的 `billiard.db`。涵蓋範圍包括：
 
 - 開台、點餐、折扣與結帳完整流程。
 - 同桌重複開台的 application 與 database 雙層保護。
@@ -322,9 +323,23 @@ python app.py
 
 ## 讓朋友測試
 
-### 方法一：朋友在自己的電腦執行
+### 方法一：下載 Windows 免安裝版（推薦）
 
-這是目前最推薦的測試方式。每台電腦會建立自己的 `billiard.db`，不會修改你的資料。
+朋友不需要安裝 Python 或 Git：
+
+1. 前往 [GitHub Releases](https://github.com/cloud-sky-0128/billiard-management-system/releases/latest)。
+2. 下載 `BilliardManager-windows-x64.zip`。
+3. 對 ZIP 選擇「解壓縮全部」，不要直接在壓縮檔裡執行。
+4. 進入解壓縮後的 `BilliardManager` 資料夾。
+5. 雙擊 `BilliardManager.exe`，瀏覽器會自動開啟管理系統。
+
+程式執行期間需保留黑色視窗；關閉視窗就會停止系統。Windows 第一次執行可能出現 SmartScreen 警告，請先確認檔案來自本專案的 GitHub Releases，再選擇「其他資訊」及「仍要執行」。
+
+每台電腦的資料獨立保存在 `%LOCALAPPDATA%\BilliardManager\billiard.db`。替換成新版程式不會刪除原本資料；完整說明也包含在 ZIP 的 `README.txt`。
+
+### 方法二：朋友從原始碼執行
+
+每台電腦會建立自己的 `billiard.db`，不會修改你的資料。
 
 朋友先安裝 [Python 3](https://www.python.org/downloads/) 與 [Git](https://git-scm.com/downloads)，再開啟 PowerShell 執行：
 
@@ -346,7 +361,7 @@ Running on http://127.0.0.1:5000
 
 如果系統找不到 `py`，將上述指令中的 `py` 改成 `python`。
 
-### 方法二：同一個 Wi-Fi 連到你的電腦
+### 方法三：同一個 Wi-Fi 連到你的電腦
 
 這種方式會共用你電腦上的同一份資料庫。測試前建議先備份 `billiard.db`，而且只允許信任的朋友連線。
 
@@ -384,6 +399,28 @@ http://192.168.1.100:5000
 - 確認 Windows 防火牆已允許 Python 使用私人網路。
 - 主機可以先開啟 <http://127.0.0.1:5000>，確認程式本身正常。
 
+### 建置 Windows 免安裝版
+
+開發者需要在 Windows 安裝建置相依套件：
+
+```powershell
+python -m pip install -r requirements-build.txt
+```
+
+執行建置腳本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1
+```
+
+完成後的分享檔案位於：
+
+```text
+dist\BilliardManager-windows-x64.zip
+```
+
+推送 `v*` 格式的 Git tag 時，GitHub Actions 也會自動執行測試、建立 Windows ZIP 並發布至 GitHub Releases。
+
 ### 建立展示資料
 
 ```bash
@@ -410,13 +447,13 @@ python scripts/seed_demo.py demo.db
 2. **歷史資料設計：** 訂單保存 `item_name`、`item_category_name`、`unit_price_cents`，session 保存費率與折扣快照。
 3. **複雜時間規則：** 支援包台倒數、分鐘進位、跨午夜優惠及隔日凌晨班別衝突判斷。
 4. **安全資料清除：** 使用 transaction、多重確認、開台檢查與刪除前備份降低誤刪風險。
-5. **可測試架構：** Application Factory 可注入暫存 database，25 項 regression tests 不會污染正式資料。
+5. **可測試架構：** Application Factory 可注入暫存 database，26 項 regression tests 不會污染正式資料。
 6. **金額精度：** schema 使用整數分，表單金額由 `Decimal` 轉換，並提供自動備份的舊資料遷移。
 
 ## 已知限制與後續規劃
 
 - 尚未加入登入、角色權限與 CSRF 保護，不應直接暴露於公開網路。
-- `app.py` 使用 Flask development server；正式部署應改用 Waitress 或其他 WSGI server。
+- 原始碼的 `app.py` 使用 Flask development server；Windows 免安裝版則使用 Waitress。公開部署仍需獨立的正式環境。
 - SQLite 適合目前的單店低併發情境；若擴充多分店或多機部署，應評估 PostgreSQL。
 - 正式環境必須透過 `SECRET_KEY` 環境變數設定不可預測的金鑰，並建立定期異地備份。
 

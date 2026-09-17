@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import secrets
+import sys
+from pathlib import Path
 
 from flask import Flask
 
@@ -10,7 +12,25 @@ from .db import init_app as init_database
 from .money import format_cents
 
 
+def default_database_path() -> Path:
+    configured_path = os.environ.get("BILLIARD_DATABASE", "").strip()
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
+    if getattr(sys, "frozen", False):
+        local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+        data_directory = (
+            Path(local_app_data) / "BilliardManager"
+            if local_app_data
+            else Path.home() / ".billiard-manager"
+        )
+        data_directory.mkdir(parents=True, exist_ok=True)
+        return data_directory / "billiard.db"
+    return PROJECT_ROOT / "billiard.db"
+
+
 def create_app(test_config: dict | None = None) -> Flask:
+    database_path = default_database_path()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
     app = Flask(
         __name__,
         template_folder=str(PROJECT_ROOT / "templates"),
@@ -18,7 +38,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
     app.config.from_mapping(
         SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
-        DATABASE=str(PROJECT_ROOT / "billiard.db"),
+        DATABASE=str(database_path),
         BACKUP_ON_RESET=True,
         BACKUP_ON_MIGRATION=True,
         MAX_CONTENT_LENGTH=1024 * 1024,

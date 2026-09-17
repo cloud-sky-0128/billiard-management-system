@@ -1,0 +1,56 @@
+name: Build Windows Portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+
+      - name: Install build dependencies
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build portable package
+        shell: pwsh
+        run: ./scripts/build_windows.ps1
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: BilliardManager-windows-x64
+          path: dist/BilliardManager-windows-x64.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create $env:GITHUB_REF_NAME
+          "dist/BilliardManager-windows-x64.zip"
+          --generate-notes
+          --title "撞球館管理系統 $env:GITHUB_REF_NAME"
