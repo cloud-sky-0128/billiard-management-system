@@ -307,8 +307,9 @@ def migrate_reservations_for_optional_end(db: sqlite3.Connection) -> None:
     row = db.execute(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reservations'"
     ).fetchone()
-    table_sql = " ".join((row["sql"] or "").split()) if row else ""
-    if not row or "end_time = '' OR end_time > start_time" in table_sql:
+    table_sql = " ".join((row["sql"] or "").split()).lower() if row else ""
+    if not row or ("end_time = '' or end_time > start_time" in table_sql
+                   and "'completed'" in table_sql):
         return
 
     db.commit()
