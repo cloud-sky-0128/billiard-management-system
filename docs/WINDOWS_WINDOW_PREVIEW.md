@@ -1,8 +1,9 @@
 撞球館管理系統 Windows 視窗預覽版
 ================================
 
-這是獨立視窗預覽版 `window-preview-0.1.0`，可從 GitHub Releases 下載
+這是獨立視窗預覽版 `window-preview-0.1.1`，可從 GitHub Releases 下載
 `BilliardManagerWindow-preview.zip`，或由原始碼自行建置。
+本版修正舊資料庫預約狀態限制，並將預約及行事曆時間選擇改為每分鐘。
 它不取代已發布的瀏覽器版，也尚未連接實體燈控。
 請先備份正式資料，再以非營業資料測試；確認穩定後才在營業時使用。
 

@@ -222,10 +222,6 @@ def save_reservation(reservation_id: int | None = None):
         event_type = request.form.get("event_type", "reservation")
         note = request.form.get("note", "").strip()
         start, end = schedule_times()
-        start_value = datetime.fromisoformat(start)
-        end_value = datetime.fromisoformat(end) if end else None
-        if start_value.minute % 5 or (end_value and end_value.minute % 5):
-            raise ValueError("開始與結束時間需以 5 分鐘為單位。")
         if (
             not table_nos
             or any(not 1 <= table_no <= table_count_value() for table_no in table_nos)

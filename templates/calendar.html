@@ -31,8 +31,8 @@
           <label class="checkbox-inline schedule-full"><input class="js-unscheduled-item" type="checkbox" name="unscheduled" value="1" {% if not item.scheduled_date %}checked{% endif %}>不指定日期，作為純待辦</label>
           <label>日期（選填） <input type="date" name="scheduled_date" value="{{ item.scheduled_date or '' }}"></label>
           <label>地點（選填） <input name="location" value="{{ item.location }}" maxlength="120"></label>
-          <label>開始（選填） <input type="time" name="start_time" value="{{ item.start_time }}"></label>
-          <label>結束（選填） <input type="time" name="end_time" value="{{ item.end_time }}"></label>
+          <label>開始（選填） <input type="time" name="start_time" step="60" value="{{ item.start_time }}"></label>
+          <label>結束（選填） <input type="time" name="end_time" step="60" value="{{ item.end_time }}"></label>
           <label class="schedule-full">備註 <input name="note" value="{{ item.note }}" maxlength="500"></label>
           <button type="submit">儲存修改</button>
         </form>
@@ -76,8 +76,8 @@
       </fieldset>
       <label>用途 <select name="event_type"><option value="reservation">一般預約</option><option value="course">課程</option><option value="club">社團</option></select></label>
       <label>名稱／電話 <input name="guest_name" maxlength="100" required></label>
-      <label>開始 <input name="start_time" type="time" step="300" required></label>
-      <label>結束（選填） <input name="end_time" type="time" step="300"></label>
+      <label>開始 <input name="start_time" type="time" step="60" required></label>
+      <label>結束（選填） <input name="end_time" type="time" step="60"></label>
       <label class="checkbox-inline schedule-full"><input type="checkbox" name="ends_next_day" value="1">結束時間為隔天</label>
       <label>備註 <input name="note" maxlength="500"></label>
       <div class="schedule-submit-cell"><button type="submit">儲存預約</button></div>
@@ -97,8 +97,8 @@
       <label class="checkbox-inline schedule-full"><input class="js-unscheduled-item" type="checkbox" name="unscheduled" value="1">不指定日期，作為純待辦</label>
       <label>日期（選填） <input type="date" name="scheduled_date" value="{{ selected.isoformat() }}"></label>
       <label>地點（選填） <input name="location" maxlength="120" placeholder="例如：吧檯旁、3 號桌區"></label>
-      <label>開始（選填） <input type="time" name="start_time"></label>
-      <label>結束（選填） <input type="time" name="end_time"></label>
+      <label>開始（選填） <input type="time" name="start_time" step="60"></label>
+      <label>結束（選填） <input type="time" name="end_time" step="60"></label>
       <label>備註 <input name="note" maxlength="500"></label>
       <div class="schedule-submit-cell"><button type="submit">新增事項</button></div>
     </form>
@@ -124,17 +124,13 @@
             <label>用途 <select name="event_type">{% for value, label in [('reservation', '一般預約'), ('course', '課程'), ('club', '社團')] %}<option value="{{ value }}" {% if value == item.event_type %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
             <label>名稱／電話 <input name="guest_name" value="{{ item.guest_name }}" maxlength="100" required></label>
             <input type="hidden" name="phone" value="{{ item.phone }}">
-            <label>開始 <input name="start_time" type="time" step="300" value="{{ item.start_time[11:16] }}" required></label>
-            <label>結束（選填） <input name="end_time" type="time" step="300" value="{{ item.end_time[11:16] if item.end_time else '' }}"></label>
+            <label>開始 <input name="start_time" type="time" step="60" value="{{ item.start_time[11:16] }}" required></label>
+            <label>結束（選填） <input name="end_time" type="time" step="60" value="{{ item.end_time[11:16] if item.end_time else '' }}"></label>
             <label class="checkbox-inline schedule-full"><input type="checkbox" name="ends_next_day" value="1" {% if item.end_time and item.end_time[:10] != item.start_time[:10] %}checked{% endif %}>結束時間為隔天</label>
             <label class="schedule-full">備註 <input name="note" value="{{ item.note }}" maxlength="500"></label>
             <button type="submit">更新</button>
           </form>
         </details>
-        <form method="post" action="{{ url_for('reservations.complete_reservation', reservation_id=item.id) }}">
-          <input type="hidden" name="date" value="{{ selected.isoformat() }}">
-          <button type="submit">完成預約</button>
-        </form>
         <form method="post" action="{{ url_for('reservations.cancel_reservation', reservation_id=item.id) }}" onsubmit="return confirm('確定取消這筆預約？');">
           <input type="hidden" name="date" value="{{ selected.isoformat() }}">
           <button type="submit" class="danger">取消預約</button>

@@ -10,20 +10,20 @@
 
 | 版本 | 取得方式 | 啟動程式 | 操作方式與狀態 |
 | --- | --- | --- | --- |
-| **瀏覽器版 `v0.1.3-desktop`** | [已發布的 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/v0.1.3-desktop) 中下載 `BilliardManager-windows-x64.zip` | `BilliardManager.exe` | 在本機瀏覽器操作；目前建議使用的已發布版本，不需 WebView2。 |
-| **獨立視窗預覽版 `window-preview-0.1.0`** | [預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.0) 下載 `BilliardManagerWindow-preview.zip` | `BilliardManagerWindow.exe` | 在獨立視窗操作；需安裝 WebView2 Runtime，先以備份資料試用。 |
+| **瀏覽器版 `v0.1.4-desktop`** | [已發布的 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/v0.1.4-desktop) 中下載 `BilliardManager-windows-x64.zip` | `BilliardManager.exe` | 在本機瀏覽器操作；目前建議使用的已發布版本，不需 WebView2。 |
+| **獨立視窗預覽版 `window-preview-0.1.1`** | [預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.1) 下載 `BilliardManagerWindow-preview.zip` | `BilliardManagerWindow.exe` | 在獨立視窗操作；需安裝 WebView2 Runtime，先以備份資料試用。 |
 | **原始碼開發版（`main`）** | Clone 本倉庫並安裝 `requirements.txt` | `python app.py` | 在本機瀏覽器操作 `http://127.0.0.1:5000`；需 Python，不是 Windows 免安裝版。 |
 
 前兩種 Windows 版都只在這台電腦的 `127.0.0.1:8765` 啟動本機服務，不必連線到網際網路；兩者不能同時執行。一般 `git push` 只更新原始碼，不會更新 Release ZIP。
 
 ### 啟動已發布的瀏覽器版
 
-1. 前往 [`v0.1.3-desktop` 下載頁](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/v0.1.3-desktop)，下載 `BilliardManager-windows-x64.zip`。
+1. 前往 [`v0.1.4-desktop` 下載頁](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/v0.1.4-desktop)，下載 `BilliardManager-windows-x64.zip`。
 2. 對 ZIP 選擇「解壓縮全部」，不要直接在壓縮檔內執行。
 3. 進入解壓後的 `BilliardManager` 資料夾，雙擊 `BilliardManager.exe`。
 4. 等待瀏覽器自動開啟 `http://127.0.0.1:8765`。使用期間請保留程式視窗；關閉視窗就會停止系統。
 
-下載後可在 PowerShell 執行以下指令，將結果與 GitHub 版本頁的 SHA-256 比對：
+下載後可在 PowerShell 執行以下指令，將結果與同一個 GitHub Release 附件 `SHA256SUMS.txt` 比對：
 
 ```powershell
 Get-FileHash -Algorithm SHA256 .\BilliardManager-windows-x64.zip
@@ -40,7 +40,9 @@ python -m pip install -r requirements-window.txt
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_windows_window.ps1
 ```
 
-可直接從 [視窗預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.0) 下載，或自行建置。完成後解壓 `BilliardManagerWindow-preview.zip`，執行其中的 `BilliardManagerWindow.exe`。**不可把瀏覽器版 ZIP 誤認為視窗版**。使用前請先看 [視窗預覽版說明](docs/WINDOWS_WINDOW_PREVIEW.md)，尤其是 WebView2 Runtime、共用資料庫及 EXE 旁 `data` 的注意事項。
+可直接從 [視窗預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.1) 下載，或自行建置。完成後解壓 `BilliardManagerWindow-preview.zip`，執行其中的 `BilliardManagerWindow.exe`。**不可把瀏覽器版 ZIP 誤認為視窗版**。使用前請先看 [視窗預覽版說明](docs/WINDOWS_WINDOW_PREVIEW.md)，尤其是 WebView2 Runtime、共用資料庫及 EXE 旁 `data` 的注意事項。
+
+本次更新修正舊資料庫按「完成預約」時的錯誤，並移除該非必要按鈕；預約與行事曆事項的時間可逐分鐘選擇。升級現有資料庫時會先建立遷移備份，不會清除既有預約。
 
 ## 資料放在哪裡
 

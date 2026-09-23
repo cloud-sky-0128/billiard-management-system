@@ -1682,7 +1682,7 @@ assert 'Database startup check failed' in log_path(database).read_text(encoding=
             ).fetchall()
         self.assertEqual([row["table_no"] for row in rows], [2, 3, 4])
 
-    def test_reservation_form_uses_multi_table_picker_and_five_minute_steps(self):
+    def test_reservation_form_uses_multi_table_picker_and_minute_steps(self):
         page = self.client.get("/calendar?month=2026-09&date=2026-09-20").get_data(
             as_text=True
         )
@@ -1699,9 +1699,10 @@ assert 'Database startup check failed' in log_path(database).read_text(encoding=
         self.assertEqual(page.count('class="schedule-submit-cell"'), 2)
         self.assertNotIn("每週重複", page)
         self.assertNotIn('name="repeat_weeks"', page)
-        self.assertGreaterEqual(page.count('type="time" step="300"'), 2)
+        self.assertNotIn('step="300"', page)
+        self.assertGreaterEqual(page.count('step="60"'), 4)
         self.assertIn(
-            '<label>結束（選填） <input name="end_time" type="time" step="300"></label>',
+            '<label>結束（選填） <input name="end_time" type="time" step="60"></label>',
             page,
         )
         self.assertNotIn("日期可以清空；時間可只填開始", page)
@@ -1712,12 +1713,36 @@ assert 'Database startup check failed' in log_path(database).read_text(encoding=
             data={
                 "date": "2026-09-20", "table_nos": ["1", "2"],
                 "event_type": "club", "guest_name": "Club", "phone": "",
-                "start_time": "14:02", "end_time": "16:00", "note": "",
+                "start_time": "14:02", "end_time": "16:03", "note": "",
             },
             follow_redirects=True,
         )
-        self.assertIn("需以 5 分鐘為單位", response.get_data(as_text=True))
-        self.assertEqual(self.db_value("SELECT COUNT(*) FROM reservations"), 0)
+        self.assertIn("預約已儲存", response.get_data(as_text=True))
+        self.assertNotIn(">完成預約</button>", response.get_data(as_text=True))
+        self.assertEqual(self.db_value("SELECT COUNT(*) FROM reservations"), 2)
+        self.assertEqual(
+            self.db_value("SELECT end_time FROM reservations ORDER BY id LIMIT 1"),
+            "2026-09-20T16:03",
+        )
+
+    def test_calendar_item_times_allow_any_minute(self):
+        response = self.client.post(
+            "/calendar-items",
+            data={
+                "item_type": "event", "title": "Minute event",
+                "scheduled_date": "2026-09-20", "start_time": "10:07",
+                "end_time": "10:23", "return_date": "2026-09-20",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.db_value("SELECT start_time FROM calendar_items WHERE title = 'Minute event'"),
+            "10:07",
+        )
+        page = response.get_data(as_text=True)
+        self.assertIn('name="start_time" step="60" value="10:07"', page)
+        self.assertIn('name="end_time" step="60" value="10:23"', page)
 
     def test_reservation_can_have_an_open_end_and_blocks_later_bookings(self):
         booking = {
@@ -2029,6 +2054,48 @@ assert 'Database startup check failed' in log_path(database).read_text(encoding=
         self.assertEqual(
             [(row["guest_name"], row["end_time"]) for row in rows],
             [("既有客人", "2026-09-18T12:00"), ("現場計時", "")],
+        )
+
+    def test_reservation_status_migration_allows_completion_on_existing_database(self):
+        with self.app.app_context():
+            self.app.config["BACKUP_ON_MIGRATION"] = False
+            db = get_db()
+            db.execute("DROP INDEX idx_reservations_time")
+            db.execute("DROP TABLE reservations")
+            db.executescript(
+                """
+                CREATE TABLE reservations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    table_no INTEGER NOT NULL,
+                    guest_name TEXT NOT NULL,
+                    phone TEXT NOT NULL DEFAULT '',
+                    event_type TEXT NOT NULL DEFAULT 'reservation',
+                    start_time TEXT NOT NULL,
+                    end_time TEXT NOT NULL DEFAULT '',
+                    note TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active'
+                        CHECK(status IN ('active', 'cancelled')),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    CHECK(end_time = '' OR end_time > start_time)
+                );
+                INSERT INTO reservations (table_no, guest_name, start_time)
+                VALUES (1, '既有客人', '2026-09-23T22:05');
+                """
+            )
+            migrate_reservations_for_optional_end(db)
+            row = db.execute("SELECT id, guest_name FROM reservations").fetchone()
+            reservation_id = row["id"]
+            self.assertEqual(row["guest_name"], "既有客人")
+
+        response = self.client.post(
+            f"/reservations/{reservation_id}/complete",
+            data={"date": "2026-09-23"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.db_value("SELECT status FROM reservations WHERE id = ?", (reservation_id,)),
+            "completed",
         )
 
     def test_employee_and_multi_date_shift_flow(self):
