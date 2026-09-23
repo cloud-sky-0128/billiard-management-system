@@ -11,7 +11,7 @@
 | 版本 | 取得方式 | 啟動程式 | 操作方式與狀態 |
 | --- | --- | --- | --- |
 | **瀏覽器版 `v0.1.3-desktop`** | [已發布的 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/v0.1.3-desktop) 中下載 `BilliardManager-windows-x64.zip` | `BilliardManager.exe` | 在本機瀏覽器操作；目前建議使用的已發布版本，不需 WebView2。 |
-| **獨立視窗預覽版（`main`，尚無版本標籤）** | 本倉庫原始碼自行建置，產物為 `dist\BilliardManagerWindow-preview.zip`；**目前不在 Releases 提供下載** | `BilliardManagerWindow.exe` | 在獨立視窗操作；需安裝 WebView2 Runtime，先以備份資料試用。 |
+| **獨立視窗預覽版 `window-preview-0.1.0`** | [預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.0) 下載 `BilliardManagerWindow-preview.zip` | `BilliardManagerWindow.exe` | 在獨立視窗操作；需安裝 WebView2 Runtime，先以備份資料試用。 |
 | **原始碼開發版（`main`）** | Clone 本倉庫並安裝 `requirements.txt` | `python app.py` | 在本機瀏覽器操作 `http://127.0.0.1:5000`；需 Python，不是 Windows 免安裝版。 |
 
 前兩種 Windows 版都只在這台電腦的 `127.0.0.1:8765` 啟動本機服務，不必連線到網際網路；兩者不能同時執行。一般 `git push` 只更新原始碼，不會更新 Release ZIP。
@@ -40,7 +40,7 @@ python -m pip install -r requirements-window.txt
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_windows_window.ps1
 ```
 
-完成後解壓 `dist\BilliardManagerWindow-preview.zip`，執行其中的 `BilliardManagerWindow.exe`。此預覽版尚未發布到 GitHub Releases，**不可把瀏覽器版 ZIP 誤認為視窗版**。使用前請先看 [視窗預覽版說明](docs/WINDOWS_WINDOW_PREVIEW.md)，尤其是 WebView2 Runtime、共用資料庫及 EXE 旁 `data` 的注意事項。
+可直接從 [視窗預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.0) 下載，或自行建置。完成後解壓 `BilliardManagerWindow-preview.zip`，執行其中的 `BilliardManagerWindow.exe`。**不可把瀏覽器版 ZIP 誤認為視窗版**。使用前請先看 [視窗預覽版說明](docs/WINDOWS_WINDOW_PREVIEW.md)，尤其是 WebView2 Runtime、共用資料庫及 EXE 旁 `data` 的注意事項。
 
 ## 資料放在哪裡
 
@@ -141,7 +141,7 @@ macOS / Linux：
 python -m unittest discover -s tests -v
 ```
 
-目前有**超過 100 項自動化測試**；測試使用暫存 SQLite，不會修改正式資料庫。[瀏覽器版建置腳本](scripts/build_windows.ps1) 與 [視窗預覽版建置腳本](scripts/build_windows_window.ps1) 分開執行。現有 `v*` 標籤的 GitHub Actions 只會打包並發布**瀏覽器版**；視窗預覽版目前不會自動發布。
+目前有**超過 100 項自動化測試**；測試使用暫存 SQLite，不會修改正式資料庫。[瀏覽器版建置腳本](scripts/build_windows.ps1) 與 [視窗預覽版建置腳本](scripts/build_windows_window.ps1) 分開執行。現有 `v*` 標籤的 GitHub Actions 只會打包並發布**瀏覽器版**；`window-preview-0.1.0` 則是單獨發布的視窗預覽版，不會觸發該瀏覽器版建置流程。
 
 ## 已知限制
 
