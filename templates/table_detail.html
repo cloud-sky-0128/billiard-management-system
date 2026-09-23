@@ -2,7 +2,7 @@
 {% block content %}
 <section class="panel panel-head">
   <div>
-    <h2>{{ table_no }} 號桌細項</h2>
+    <h2>{{ table_label(table_no) }}細項</h2>
   </div>
   <div>
     <a class="btn-link" href="{{ url_for('tables.dashboard') }}">回總覽</a>
@@ -10,27 +10,52 @@
 </section>
 
 {% if runtime %}
-<section class="panel">
-  <h3>目前狀態：開台（{{ runtime.mode_label }}）</h3>
+<section class="table-operation-layout">
+<section class="panel table-status-panel">
+  <h3>目前狀態：{{ '使用中' if runtime.timer_kind == 'practice' else '開台' }}（{{ runtime.mode_label }}）</h3>
   <p>開台時間：{{ runtime.start_dt.strftime('%Y-%m-%d %H:%M:%S') }}</p>
-  {% if runtime.timer_kind == 'package' %}
+  <details>
+    <summary>換桌</summary>
+    {% if transfer_tables %}
+    <form method="post" action="{{ url_for('tables.transfer_session', session_id=runtime.session.id) }}" class="inline-form" onsubmit="return confirm('換桌後沿用原費率、時間及帳單，確定換桌？');">
+      <input type="hidden" name="from_table" value="{{ table_no }}">
+      <label>換到 <select name="to_table" required>{% for no in transfer_tables %}<option value="{{ no }}">{{ table_label(no) }}</option>{% endfor %}</select></label>
+      <button type="submit">確認換桌</button>
+    </form>
+    {% if runtime.timer_kind == 'practice' %}
+    <p class="muted">免費練習狀態不中斷，餐飲帳單一併保留。</p>
+    {% else %}
+    <p class="muted">沿用原開桌費率與優惠，時間不中斷，餐飲及已收款一併保留。</p>
+    {% endif %}
+    {% else %}<p class="muted">目前沒有可換入的空桌。</p>{% endif %}
+    {% for transfer in transfer_history %}<p>{{ table_label(transfer.from_table) }} → {{ table_label(transfer.to_table) }}</p>{% endfor %}
+  </details>
+  {% if runtime.timer_kind == 'practice' %}
+  <p>本次費率：免費</p>
+  {% elif runtime.timer_kind == 'package' %}
   <p>本次費率：每小時 {{ runtime.session.rate_per_hour_cents|money }} 元</p>
+  {% if runtime.prepayment_count %}
+  <p>本次優惠：{{ runtime.session.discount_name or '原價' }} · {{ runtime.discount_label }}</p>
+  {% endif %}
   {% else %}
   <p>本次費率：每分鐘 {{ runtime.session.rate_per_min_cents|money }} 元</p>
   {% endif %}
   <p>
-    {% if runtime.timer_kind == 'package' %}
+    {% if runtime.timer_kind == 'practice' %}
+      使用狀態：
+    {% elif runtime.timer_kind == 'package' %}
       剩餘時間：
     {% else %}
       計時時間：
     {% endif %}
-    <strong class="js-timer" data-kind="{{ runtime.timer_kind }}" data-seconds="{{ runtime.timer_seconds }}">{{ runtime.timer_text }}</strong>
+    <strong{% if runtime.timer_kind != 'practice' %} class="js-timer" data-kind="{{ runtime.timer_kind }}" data-seconds="{{ runtime.timer_seconds }}"{% endif %}>{{ runtime.timer_text }}</strong>
   </p>
   {% if runtime.timer_kind == 'package' %}
   <p>包台總時數：{{ runtime.session.package_hours }} 小時</p>
+  {% if runtime.session.package_hours < 16 %}
   <form id="extend-form" class="inline-form" method="post" action="{{ url_for('tables.extend_package_session', session_id=runtime.session.id) }}">
     <label>中途加時</label>
-    <input id="extra-hours-input" type="number" name="extra_hours" min="1" max="24" value="1" required>
+    <input id="extra-hours-input" type="number" name="extra_hours" min="1" max="{{ [0, 16 - runtime.session.package_hours]|max }}" value="1" required>
     <span class="muted">小時</span>
     <button type="submit">加入時數</button>
   </form>
@@ -39,75 +64,67 @@
     <button type="button" data-add="2">+2hr</button>
     <button type="button" data-add="3">+3hr</button>
   </div>
+  {% else %}<p class="muted">已達包台 16 小時上限，不能再加時。</p>{% endif %}
   {% endif %}
+  {% if runtime.timer_kind == 'practice' %}
+  <p>球檯費：0 元</p>
+  <p>餐點/飲料費（目前）：{{ runtime.food_total_cents|money }} 元</p>
+  <p>結束時只收餐飲：<strong>{{ runtime.practice_due_cents|money }} 元</strong></p>
+  {% elif runtime.timer_kind == 'package' %}
+  <p>球檯費原價：{{ runtime.table_fee_cents|money }} 元</p>
+  {% if runtime.prepayment_count %}
+  <p>已收款：<strong>{{ runtime.paid_total_cents|money }} 元</strong></p>
+  {% if runtime.table_due_cents %}<p>球檯費（待結）：{{ runtime.table_due_cents|money }} 元</p>{% endif %}
+  <p>餐點/飲料總額：{{ runtime.food_total_cents|money }} 元</p>
+  {% if runtime.paid_food_gross_cents %}<p>已結帳餐飲原價：{{ runtime.paid_food_gross_cents|money }} 元</p>{% endif %}
+  <p>未結帳餐飲原價：{{ runtime.unpaid_food_cents|money }} 元</p>
+  {% if runtime.unpaid_food_discount_cents %}<p>未結帳餐飲優惠：-{{ runtime.unpaid_food_discount_cents|money }} 元</p>{% endif %}
+  <p>結束包台時待收：<strong>{{ runtime.total_due_cents|money }} 元</strong></p>
+  {% else %}
+  <p>球檯費（尚未收款）：{{ runtime.table_fee_cents|money }} 元</p>
+  <p>餐點/飲料費（尚未收款）：{{ runtime.food_total_cents|money }} 元</p>
+  <p>目前總額：<strong>{{ runtime.gross_total_cents|money }} 元</strong></p>
+  {% endif %}
+  {% else %}
   <p>球檯費（目前）：{{ runtime.table_fee_cents|money }} 元</p>
   <p>餐點/飲料費（目前）：{{ runtime.food_total_cents|money }} 元</p>
   <p>目前總額：<strong>{{ runtime.gross_total_cents|money }} 元</strong></p>
+  {% endif %}
 </section>
 
-<section class="two-col">
+<aside class="table-operation-sidebar">
+  {% include '_order_panel.html' %}
+
   <article class="panel">
-    <h3>點餐</h3>
-    <form class="inline-form" method="get" action="{{ url_for('tables.table_detail', table_no=table_no) }}">
-      <label>分類</label>
-      <select name="category_id" onchange="this.form.submit()">
-        {% for category in categories %}
-          <option value="{{ category.id }}" {% if selected_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
-        {% endfor %}
-      </select>
-      <noscript><button type="submit">切換分類</button></noscript>
+    {% if runtime.timer_kind == 'practice' %}
+    <h3>結束免費練習</h3>
+    <p class="muted">不收球檯費；若有點餐，結束時只收餐飲費。</p>
+    <form method="post" action="{{ url_for('tables.end_session', session_id=runtime.session.id) }}">
+      <button class="danger" type="submit">
+        {% if runtime.practice_due_cents %}結束使用並收取餐飲 {{ runtime.practice_due_cents|money }} 元{% else %}結束使用{% endif %}
+      </button>
     </form>
-
-    {% if selected_items %}
-    <form class="order-form-grid" method="post" action="{{ url_for('tables.add_order') }}">
-      <input type="hidden" name="session_id" value="{{ runtime.session.id }}">
-      <input type="hidden" name="category_id" value="{{ selected_category_id or '' }}">
-
-      <div class="field-group">
-        <label>品項</label>
-        <select name="item_id" required>
-          {% for item in selected_items %}
-            <option value="{{ item.id }}">{{ item.name }}（{{ item.price_cents|money }} 元）</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="field-group">
-        <label>數量</label>
-        <input type="number" name="quantity" min="1" value="1" required>
-      </div>
-
-      {% if selected_category_is_drink %}
-      <div class="field-group">
-        <label>甜度</label>
-        <select name="sugar_level" required>
-          {% for sugar in sugar_options %}
-            <option value="{{ sugar }}">{{ sugar }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="field-group">
-        <label>溫度/冰塊</label>
-        <select name="ice_level" required>
-          {% for ice in ice_options %}
-            <option value="{{ ice }}">{{ ice }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      {% endif %}
-
-      <div class="order-submit">
-        <button type="submit">新增餐點</button>
-      </div>
+    {% elif runtime.timer_kind == 'package' and runtime.prepayment_count %}
+    <h3>包台分次收款</h3>
+    {% if runtime.unpaid_drink_cents %}
+    <p>尚未付款飲料：{{ runtime.unpaid_drink_cents|money }} 元{% if runtime.unpaid_drink_discount_cents %}，優惠 {{ runtime.unpaid_drink_discount_cents|money }} 元{% endif %}</p>
+    <form method="post" action="{{ url_for('tables.checkout_package_drinks', session_id=runtime.session.id) }}">
+      <button type="submit">飲料立即結帳 · 收取 {{ runtime.unpaid_drink_due_cents|money }} 元</button>
     </form>
     {% else %}
-    <p class="muted">此分類目前沒有可點品項。</p>
+    <p class="muted">新增飲料後，可在這裡立即結帳，不必等到包台結束。</p>
     {% endif %}
-  </article>
-
-  <article class="panel">
-    <h3>結帳</h3>
+    <hr class="panel-divider">
+    <h3>結束包台</h3>
+    <p class="muted">系統會扣除開台及加時時已收取的金額，只結清剩餘球檯費與餐飲費。</p>
+    <form method="post" action="{{ url_for('tables.end_session', session_id=runtime.session.id) }}">
+      <button class="danger" type="submit">
+        {% if runtime.total_due_cents %}結束包台並收取 {{ runtime.total_due_cents|money }} 元{% else %}結束包台{% endif %}
+      </button>
+    </form>
+    {% else %}
+    <h3>{% if runtime.timer_kind == 'package' %}包台結帳{% else %}計時結帳{% endif %}</h3>
+    {% if runtime.timer_kind == 'package' %}<p class="muted">這是更新前建立的包台，尚未預收球檯費，請在結束時完成整筆結帳。</p>{% endif %}
     <form class="order-form-grid" method="post" action="{{ url_for('tables.end_session', session_id=runtime.session.id) }}">
       <div class="field-group schedule-full">
         <label>優惠類別</label>
@@ -117,7 +134,6 @@
             <option value="{{ discount.id }}">{{ discount.name }} · {% if discount.pricing_method == 'package_hourly' %}包台每小時 {{ discount.package_rate_per_hour_cents|money }} 元{% else %}{{ discount.discount_percent / 10 }} 折{% if discount.applicable_mode == 'timed' %} · 只限計時{% elif discount.applicable_mode == 'package' %} · 只限包台{% endif %}{% endif %}{% if discount.start_time %} · {{ discount.start_time }}–{{ discount.end_time }}{% endif %}</option>
           {% endfor %}
         </select>
-        {% if not discount_types %}<span class="muted">目前沒有符合此時段的優惠方案，可在費率設定新增。</span>{% endif %}
       </div>
       <div class="field-group">
         <label>自訂折扣</label>
@@ -149,69 +165,96 @@
         <button class="danger" type="submit">結束並結帳</button>
       </div>
     </form>
+    {% endif %}
   </article>
+</aside>
 </section>
 
-<section class="panel">
-  <h3>已點餐紀錄</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>品項</th>
-        <th>甜度</th>
-        <th>溫度/冰塊</th>
-        <th>數量</th>
-        <th>小計</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for order in runtime.orders %}
-      <tr>
-        <td>{{ order.item_name }}</td>
-        <td>{{ order.sugar_level or '-' }}</td>
-        <td>{{ order.ice_level or '-' }}</td>
-        <td>{{ order.quantity }}</td>
-        <td>{{ order.subtotal_cents|money }} 元</td>
-        <td>
-          <form class="inline-form" method="post" action="{{ url_for('tables.delete_order', order_id=order.id) }}" onsubmit="return confirm('確定刪除這筆訂單嗎？');">
-            <input type="hidden" name="category_id" value="{{ selected_category_id or '' }}">
-            <button type="submit" class="danger">刪除</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="6">尚未點餐</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
+{% set order_rows = tab_orders %}
+{% include '_order_history.html' %}
 {% else %}
-<section class="panel">
-  <h3>目前狀態：關台</h3>
+<section class="table-operation-layout">
+<section class="panel table-status-panel">
+  <h3>目前狀態：{{ '待開台' if tab else '空桌' }}</h3>
+  {% if tab %}<p>餐飲費（目前）：{{ tab_food_total_cents|money }} 元，計時尚未開始。</p>{% endif %}
   <p>計時費率：每分鐘 {{ table_rate.timed_rate_per_min_cents|money }} 元</p>
   <p>包台費率：每小時 {{ table_rate.package_rate_per_hour_cents|money }} 元</p>
 
-  <form class="inline-form" method="post" action="{{ url_for('tables.start_session') }}">
-    <input type="hidden" name="table_no" value="{{ table_no }}">
-    <input type="hidden" name="mode" value="timed">
-    <button type="submit">開始計時</button>
-  </form>
+  <div class="inline-form session-start-actions">
+    <form class="inline-form" method="post" action="{{ url_for('tables.start_session') }}">
+      <input type="hidden" name="table_no" value="{{ table_no }}">
+      <input type="hidden" name="mode" value="timed">
+      <button type="submit">開始計時</button>
+    </form>
+
+    <form class="inline-form" method="post" action="{{ url_for('tables.start_session') }}">
+      <input type="hidden" name="table_no" value="{{ table_no }}">
+      <input type="hidden" name="mode" value="practice">
+      <button type="submit">開免費練習燈</button>
+    </form>
+  </div>
 
   {% if can_package %}
-  <form class="inline-form" method="post" action="{{ url_for('tables.start_session') }}">
-    <input type="hidden" name="table_no" value="{{ table_no }}">
-    <input type="hidden" name="mode" value="package">
-    <label>包台時數</label>
-    <input type="number" name="package_hours" min="1" value="1" required>
-    <button type="submit">開始包台</button>
-  </form>
-  {% else %}
-  <p class="muted">此桌目前未啟用包台，可在費率設定中開啟。</p>
+  <div class="package-start-card">
+    <h4>包台先結帳</h4>
+    <p class="muted">開始包台時會收球檯費{% if tab_drink_total_cents %}，並一起收取目前飲料 {{ tab_drink_total_cents|money }} 元{% endif %}；之後新增的飲料仍可隨時結帳。</p>
+    <form class="order-form-grid package-start-form" method="post" action="{{ url_for('tables.start_session') }}">
+      <input type="hidden" name="table_no" value="{{ table_no }}">
+      <input type="hidden" name="mode" value="package">
+      <div class="field-group">
+        <label>包台時數</label>
+        <input type="number" name="package_hours" min="1" max="16" value="1" required>
+      </div>
+      <div class="field-group schedule-full">
+        <label>優惠方案</label>
+        <select name="discount_type_id">
+          <option value="">不套用方案／使用下方自訂折扣</option>
+          {% for discount in package_discount_types %}
+          <option value="{{ discount.id }}">{{ discount.name }} · {% if discount.pricing_method == 'package_hourly' %}包台每小時 {{ discount.package_rate_per_hour_cents|money }} 元{% else %}{{ discount.discount_percent / 10 }} 折{% endif %}{% if discount.start_time %} · {{ discount.start_time }}–{{ discount.end_time }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field-group">
+        <label>自訂折扣</label>
+        <select name="discount_percent">
+          {% for d in discount_options %}
+          <option value="{{ d }}">{% if d == 100 %}原價{% elif d % 10 == 0 %}{{ (d // 10)|int }} 折{% else %}{{ '%.1f'|format(d / 10) }} 折{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field-group">
+        <label>自訂折扣套用</label>
+        <select name="discount_scope">
+          {% for scope_value, scope_label in discount_scope_options %}
+          <option value="{{ scope_value }}">{{ scope_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="order-submit">
+        <button type="submit">確認收款並開始包台</button>
+      </div>
+    </form>
+  </div>
   {% endif %}
 </section>
+
+<aside class="table-operation-sidebar">
+  {% include '_order_panel.html' %}
+  {% if tab %}
+  <section class="panel">
+    <h3>結帳</h3>
+    <form method="post" action="{{ url_for('tables.checkout_food_only', tab_id=tab.id) }}" onsubmit="return confirm('確定只結算餐飲費並釋放球檯嗎？');">
+      <button type="submit">只結餐飲費</button>
+    </form>
+  </section>
+  {% endif %}
+</aside>
+</section>
+
+{% if tab %}
+  {% set order_rows = tab_orders %}
+  {% include '_order_history.html' %}
+{% endif %}
 {% endif %}
 
 <script>
@@ -250,7 +293,7 @@
         const step = Number(btn.dataset.add || "0");
         const current = Number(extraInput.value || "0");
         let next = (Number.isFinite(current) ? current : 0) + (Number.isFinite(step) ? step : 0);
-        next = Math.max(1, Math.min(24, next));
+        next = Math.max(1, Math.min(Number(extraInput.max), next));
         extraInput.value = String(next);
         extraInput.focus();
       });

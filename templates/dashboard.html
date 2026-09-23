@@ -1,23 +1,24 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block content %}
+<div class="dashboard-layout">
 <section class="panel">
   <h2>球檯總覽（1 ~ {{ table_count }} 號桌）</h2>
 </section>
 
-<section class="table-grid">
+<section class="table-grid dashboard-table-grid">
   {% for table in tables %}
   <article class="table-card">
     <header>
       <h3>
         <a class="table-title-link" href="{{ url_for('tables.table_detail', table_no=table.table_no) }}">
-          {{ table.table_no }} 號桌
+          {{ table_label(table.table_no) }}
         </a>
       </h3>
       <span class="status-badge status-{{ table.status_class }}">{{ table.status }}</span>
     </header>
     <p>模式：{{ table.mode_label }}</p>
     <p>
-      時間：
+      {{ '狀態' if table.timer_kind == 'practice' else '時間' }}：
       <strong
         class="js-timer"
         data-kind="{{ table.timer_kind }}"
@@ -27,6 +28,33 @@
   </article>
   {% endfor %}
 </section>
+
+<section class="panel waiting-panel">
+  <h2>候位／未分桌消費單</h2>
+  <p class="muted">客人可以先點飲料或餐點；分桌後仍需手動按「開始計時」或「開始包台」。</p>
+  <form class="waiting-form" method="post" action="{{ url_for('tables.create_waiting') }}">
+    <label>稱呼
+      <input name="display_name" maxlength="60" placeholder="選填，例如小美">
+    </label>
+    <label>人數
+      <input type="number" name="guest_count" min="1" max="99" value="1" required>
+    </label>
+    <button type="submit">新增候位消費單</button>
+  </form>
+  {% if waiting_tabs %}
+  <div class="table-grid">
+    {% for tab in waiting_tabs %}
+    <article class="table-card">
+      <h3>候位 #{{ tab.id }} · {{ tab.display_name or '未命名' }}</h3>
+      <p>{{ tab.guest_count }} 人 · {{ tab.opened_at[:16].replace('T', ' ') }}</p>
+      <p>餐飲費：{{ tab.food_total_cents|money }} 元</p>
+      <a class="btn-link" href="{{ url_for('tables.waiting_detail', tab_id=tab.id) }}">繼續點餐／分桌</a>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}<p class="muted">目前沒有候位消費單。</p>{% endif %}
+</section>
+</div>
 
 <script>
 (function () {
@@ -45,7 +73,7 @@
   function tick() {
     timers.forEach((node) => {
       const kind = node.dataset.kind;
-      if (kind === "idle") return;
+      if (kind === "idle" || kind === "practice") return;
       let sec = Number(node.dataset.seconds || "0");
       if (Number.isNaN(sec)) sec = 0;
 

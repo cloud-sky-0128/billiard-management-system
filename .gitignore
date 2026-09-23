@@ -5,6 +5,9 @@ venv/
 .env
 *.db
 *.db-journal
+*.db.write.lock
 backups/
+logs/
+*.log
 build/
 dist/

@@ -11,46 +11,46 @@
 
 <section class="four-col">
   <article class="panel">
-    <h3>球檯營收</h3>
-    <p class="big-number">{{ table_revenue_cents|money }}</p>
+    <h3>球檯計價原價</h3>
+    <p class="big-number">{{ table_list_cents|money }}</p>
   </article>
   <article class="panel">
-    <h3>餐點/飲料營收</h3>
-    <p class="big-number">{{ food_revenue_cents|money }}</p>
+    <h3>餐點/飲料原價</h3>
+    <p class="big-number">{{ food_list_cents|money }}</p>
   </article>
   <article class="panel">
-    <h3>原始總額</h3>
-    <p class="big-number">{{ gross_total_cents|money }}</p>
+    <h3>計價原價總額</h3>
+    <p class="big-number">{{ gross_list_cents|money }}</p>
   </article>
   <article class="panel">
-    <h3>折扣後實收</h3>
-    <p class="big-number">{{ net_total_cents|money }}</p>
+    <h3>實際已收</h3>
+    <p class="big-number">{{ paid_total_cents|money }}</p>
   </article>
 </section>
 
 <section class="panel">
   <h3>每小時開台筆數</h3>
   <div class="traffic-chart">
-    {% for value in traffic_data %}
-      {% set height = (value / max_traffic * 100) if max_traffic > 0 else 0 %}
+    {% for point in traffic_points %}
+      {% set height = (point.value / max_traffic * 100) if max_traffic > 0 else 0 %}
       <div class="bar-wrap">
-        <div class="bar" style="height: {{ height }}%" title="{{ loop.index0 }} 點：{{ value }} 筆"></div>
-        <span class="bar-label">{{ loop.index0 }}</span>
+        <div class="bar" style="height: {{ height }}%" title="{{ point.label }} 點：{{ point.value }} 筆"></div>
+        <span class="bar-label">{{ point.label }}</span>
       </div>
     {% endfor %}
   </div>
 </section>
 
 <section class="panel">
-  <h3>當日結帳紀錄</h3>
+  <h3>當日收款紀錄</h3>
   <table>
     <thead>
       <tr>
-        <th>結帳時間</th>
+        <th>收款時間</th>
         <th>桌號</th>
         <th>模式</th>
-        <th>球檯費</th>
-        <th>餐點/飲料費</th>
+        <th>球檯原價</th>
+        <th>餐點/飲料原價</th>
         <th>折扣</th>
         <th>折扣套用</th>
         <th>實收</th>
@@ -70,7 +70,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="8">當日尚無結帳資料</td>
+        <td colspan="8">當日尚無收款資料</td>
       </tr>
       {% endfor %}
     </tbody>

@@ -1,7 +1,7 @@
 ﻿<div class="schedule-toolbar">
-  <a class="btn-link month-nav-button" href="{{ url_for(endpoint, month=previous.strftime('%Y-%m'), date=previous.isoformat()) }}" aria-label="上個月" title="上個月">◀</a>
+  {% if previous.year >= 1900 %}<a class="btn-link month-nav-button" href="{{ url_for(endpoint, month=previous.strftime('%Y-%m'), date=previous.isoformat()) }}" aria-label="上個月" title="上個月">◀</a>{% else %}<span class="btn-link month-nav-button" aria-disabled="true">◀</span>{% endif %}
   <h2>{{ month.strftime('%Y 年 %m 月') }}</h2>
-  <a class="btn-link month-nav-button" href="{{ url_for(endpoint, month=following.strftime('%Y-%m'), date=following.isoformat()) }}" aria-label="下個月" title="下個月">▶</a>
+  {% if following.year <= 9998 %}<a class="btn-link month-nav-button" href="{{ url_for(endpoint, month=following.strftime('%Y-%m'), date=following.isoformat()) }}" aria-label="下個月" title="下個月">▶</a>{% else %}<span class="btn-link month-nav-button" aria-disabled="true">▶</span>{% endif %}
 </div>
 <div class="schedule-grid">
   {% for weekday in ['一', '二', '三', '四', '五', '六', '日'] %}

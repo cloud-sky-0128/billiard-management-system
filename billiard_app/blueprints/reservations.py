@@ -6,9 +6,9 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from ..config import CALENDAR_ITEM_TYPES
-from ..db import get_db
+from ..db import get_db, table_label
 from ..services.billing import table_count_value
-from ..services.scheduling import schedule_redirect, schedule_selection, schedule_times
+from ..services.scheduling import schedule_redirect, schedule_selection, schedule_times, reservation_end, supported_date
 
 bp = Blueprint("reservations", __name__)
 
@@ -16,7 +16,7 @@ bp = Blueprint("reservations", __name__)
 def calendar_item_redirect(preferred_date: str | None = None):
     candidate = preferred_date or request.form.get("return_date", "")
     try:
-        day = date.fromisoformat(candidate)
+        day = supported_date(candidate)
     except ValueError:
         day = date.today()
     return redirect(
@@ -41,16 +41,17 @@ def calendar_item_form_data() -> tuple[str, str, str | None, str, str, str, str]
         raise ValueError("請填寫事項名稱。")
     if item_type not in CALENDAR_ITEM_TYPES:
         raise ValueError("事項類型無效。")
-    scheduled_date = date.fromisoformat(scheduled_value).isoformat() if scheduled_value else None
-    if bool(start_time) != bool(end_time):
-        raise ValueError("開始與結束時間必須一起填寫。")
+    scheduled_date = supported_date(scheduled_value).isoformat() if scheduled_value else None
+    if end_time and not start_time:
+        raise ValueError("填寫結束時間時，也需要填寫開始時間。")
     if start_time:
         if not scheduled_date:
             raise ValueError("設定時間前必須先選擇日期。")
         start = datetime.strptime(start_time, "%H:%M")
-        end = datetime.strptime(end_time, "%H:%M")
-        if end <= start:
-            raise ValueError("結束時間必須晚於開始時間。")
+        if end_time:
+            end = datetime.strptime(end_time, "%H:%M")
+            if end <= start:
+                raise ValueError("結束時間必須晚於開始時間。")
     return title, item_type, scheduled_date, start_time, end_time, location, note
 
 
@@ -62,9 +63,9 @@ def calendar_page():
     month_end = following.isoformat()
     reservations = db.execute(
         """SELECT * FROM reservations
-           WHERE status = 'active' AND start_time >= ? AND start_time < ?
+           WHERE status IN ('active', 'completed') AND start_time >= ? AND start_time < ?
            ORDER BY start_time, table_no""",
-        (month_start, month_end),
+        ((month - timedelta(days=1)).isoformat(), month_end),
     ).fetchall()
     calendar_items = db.execute(
         """SELECT * FROM calendar_items
@@ -75,15 +76,19 @@ def calendar_page():
 
     calendar_entries: dict[str, list[dict]] = {}
     for row in reservations:
-        day = row["start_time"][:10]
-        calendar_entries.setdefault(day, []).append(
-            {
-                "time": row["start_time"][11:16],
-                "name": f"{row['table_no']} 號桌 · {row['guest_name']}",
-                "color": "#D4B483",
-                "sort_key": row["start_time"][11:16],
-            }
-        )
+        first_day = max(month, date.fromisoformat(row["start_time"][:10]))
+        last_day = min(following - timedelta(days=1), (datetime.fromisoformat(reservation_end(row['start_time'], row['end_time'])) - timedelta(minutes=1)).date())
+        for offset in range((last_day - first_day).days + 1):
+            day = (first_day + timedelta(days=offset)).isoformat()
+            calendar_entries.setdefault(day, []).append(
+                {
+                    "time": row["start_time"][11:16] if day == row["start_time"][:10] else "跨日",
+                    "name": f"{table_label(row['table_no'])} · {row['guest_name']}",
+                    "color": "#D4B483",
+                    "sort_key": row["start_time"][11:16] if day == row["start_time"][:10] else "00:00",
+                    "status_class": "is-completed" if row["status"] == "completed" else "",
+                }
+            )
     for row in calendar_items:
         type_info = CALENDAR_ITEM_TYPES[row["item_type"]]
         calendar_entries.setdefault(row["scheduled_date"], []).append(
@@ -103,7 +108,9 @@ def calendar_page():
         entries.sort(key=lambda entry: entry["sort_key"])
 
     selected_date = selected.isoformat()
-    day_reservations = [row for row in reservations if row["start_time"][:10] == selected_date]
+    day_reservations = [row for row in reservations
+                        if row['start_time'] < (selected + timedelta(days=1)).isoformat()
+                        and reservation_end(row['start_time'], row['end_time']) > selected_date + 'T00:00']
     day_calendar_items = [row for row in calendar_items if row["scheduled_date"] == selected_date]
     unscheduled_items = db.execute(
         """SELECT * FROM calendar_items
@@ -205,30 +212,32 @@ def delete_calendar_item(item_id: int):
 def save_reservation(reservation_id: int | None = None):
     db = get_db()
     try:
-        table_no = int(request.form["table_no"])
+        if reservation_id is None:
+            raw_table_nos = request.form.getlist("table_nos") or [request.form["table_no"]]
+        else:
+            raw_table_nos = [request.form["table_no"]]
+        table_nos = sorted({int(value) for value in raw_table_nos})
         guest_name = request.form["guest_name"].strip()
         phone = request.form.get("phone", "").strip()
         event_type = request.form.get("event_type", "reservation")
         note = request.form.get("note", "").strip()
         start, end = schedule_times()
-        repeat_weeks = 1 if reservation_id is not None else int(request.form.get("repeat_weeks", "1"))
-        if not 1 <= table_no <= table_count_value() or not guest_name:
-            raise ValueError("請填寫姓名並選擇有效桌號。")
+        start_value = datetime.fromisoformat(start)
+        end_value = datetime.fromisoformat(end) if end else None
+        if start_value.minute % 5 or (end_value and end_value.minute % 5):
+            raise ValueError("開始與結束時間需以 5 分鐘為單位。")
+        if (
+            not table_nos
+            or any(not 1 <= table_no <= table_count_value() for table_no in table_nos)
+            or not guest_name
+        ):
+            raise ValueError("請填寫姓名並至少選擇一張有效球桌。")
         if event_type not in {"reservation", "course", "club"}:
             raise ValueError("活動類型無效。")
-        if not 1 <= repeat_weeks <= 24:
-            raise ValueError("重複週數需介於 1 到 24 週。")
     except (KeyError, ValueError) as exc:
         flash(f"預約資料無效：{exc}", "error")
         return schedule_redirect("reservations.calendar_page")
 
-    occurrences = [
-        (
-            (datetime.fromisoformat(start) + timedelta(weeks=week)).isoformat(timespec="minutes"),
-            (datetime.fromisoformat(end) + timedelta(weeks=week)).isoformat(timespec="minutes"),
-        )
-        for week in range(repeat_weeks)
-    ]
     try:
         db.execute("BEGIN IMMEDIATE")
         if reservation_id is not None and not db.execute(
@@ -237,18 +246,22 @@ def save_reservation(reservation_id: int | None = None):
             db.rollback()
             flash("找不到可修改的預約。", "error")
             return schedule_redirect("reservations.calendar_page")
-        for occurrence_start, occurrence_end in occurrences:
+        for table_no in table_nos:
             conflict = db.execute(
                 """SELECT id FROM reservations
                    WHERE table_no = ? AND status = 'active'
-                     AND start_time < ? AND end_time > ? AND id != ?
+                     AND start_time < ?
+                     AND (CASE WHEN end_time = '' THEN
+                         strftime('%Y-%m-%dT%H:%M', start_time, '+1 hour')
+                         ELSE end_time END) > ?
+                     AND id != ?
                    LIMIT 1""",
-                (table_no, occurrence_end, occurrence_start, reservation_id or 0),
+                (table_no, reservation_end(start, end), start, reservation_id or 0),
             ).fetchone()
             if conflict:
                 db.rollback()
                 flash(
-                    f"{table_no} 號桌在 {occurrence_start[:10]} 的時段已有預約，未建立任何資料。",
+                    f"{table_label(table_no)}在 {start[:10]} 的時段已有預約，未建立任何資料。",
                     "error",
                 )
                 return schedule_redirect("reservations.calendar_page")
@@ -259,8 +272,8 @@ def save_reservation(reservation_id: int | None = None):
                    (table_no, guest_name, phone, event_type, start_time, end_time, note)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    (table_no, guest_name, phone, event_type, occurrence_start, occurrence_end, note)
-                    for occurrence_start, occurrence_end in occurrences
+                    (table_no, guest_name, phone, event_type, start, end, note)
+                    for table_no in table_nos
                 ],
             )
         else:
@@ -274,7 +287,7 @@ def save_reservation(reservation_id: int | None = None):
         db.rollback()
         flash("預約儲存失敗，請稍後重試。", "error")
         return schedule_redirect("reservations.calendar_page")
-    flash(f"預約已儲存，共 {repeat_weeks} 筆。", "success")
+    flash(f"預約已儲存，共 {len(table_nos)} 張球桌。", "success")
     return schedule_redirect("reservations.calendar_page")
 
 
@@ -287,4 +300,13 @@ def cancel_reservation(reservation_id: int):
     )
     db.commit()
     flash("預約已取消。", "success")
+    return schedule_redirect("reservations.calendar_page")
+
+
+@bp.route("/reservations/<int:reservation_id>/complete", methods=["POST"])
+def complete_reservation(reservation_id: int):
+    db = get_db()
+    db.execute("UPDATE reservations SET status = 'completed' WHERE id = ? AND status = 'active'", (reservation_id,))
+    db.commit()
+    flash("預約已完成，時段已釋放。", "success")
     return schedule_redirect("reservations.calendar_page")

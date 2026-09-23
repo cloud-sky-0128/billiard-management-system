@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel panel-head">
+  <div>
+    <h2>候位 #{{ tab.id }} · {{ tab.display_name or '未命名' }}</h2>
+    <p>{{ tab.guest_count }} 人 · 尚未分桌，球檯計時尚未開始。</p>
+  </div>
+  <a class="btn-link" href="{{ url_for('tables.dashboard') }}">回總覽</a>
+</section>
+
+<section class="panel">
+  <h3>分配球檯</h3>
+  {% if free_tables %}
+  <form class="inline-form" method="post" action="{{ url_for('tables.assign_waiting', tab_id=tab.id) }}">
+    <label>空桌</label>
+    <select name="table_no" required>
+      {% for table_no in free_tables %}<option value="{{ table_no }}">{{ table_label(table_no) }}</option>{% endfor %}
+    </select>
+    <button type="submit">分配球檯（不開始計時）</button>
+  </form>
+  {% else %}<p class="muted">目前沒有空桌，可先繼續點餐。</p>{% endif %}
+</section>
+
+{% include '_order_panel.html' %}
+<p>餐飲費（目前）：<strong>{{ food_total_cents|money }} 元</strong></p>
+{% set order_rows = orders %}
+{% include '_order_history.html' %}
+
+<section class="panel">
+  <h3>只結餐飲費</h3>
+  <form method="post" action="{{ url_for('tables.checkout_food_only', tab_id=tab.id) }}" onsubmit="return confirm('確定結帳候位消費單嗎？');">
+    <button type="submit">結帳 {{ food_total_cents|money }} 元</button>
+  </form>
+</section>
+{% endblock %}

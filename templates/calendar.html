@@ -9,7 +9,7 @@
     </div>
     <div class="calendar-item-meta">
       {% if item.scheduled_date %}<span>日期：{{ item.scheduled_date }}</span>{% else %}<span>未排日期</span>{% endif %}
-      {% if item.start_time %}<span>時間：{{ item.start_time }}–{{ item.end_time }}</span>{% endif %}
+      {% if item.start_time %}<span>時間：{{ item.start_time }}{% if item.end_time %}–{{ item.end_time }}{% endif %}</span>{% endif %}
       {% if item.location %}<span>地點：{{ item.location }}</span>{% endif %}
     </div>
     {% if item.note %}<p>備註：{{ item.note }}</p>{% endif %}
@@ -48,7 +48,7 @@
 {% block content %}
 <section class="panel">
   <div class="panel-head">
-    <div><h1>行事曆／預約</h1><p class="muted">球檯預約與館內事項分開管理</p></div>
+    <div><h1>行事曆／預約</h1></div>
   </div>
   {% set endpoint = 'reservations.calendar_page' %}
   {% include '_schedule_month.html' %}
@@ -61,19 +61,27 @@
 <section class="two-col calendar-create-grid">
   <article class="panel">
     <h2>{{ selected.isoformat() }} 新增球檯預約</h2>
-    <form class="schedule-form" method="post" action="{{ url_for('reservations.save_reservation') }}">
-      <label>日期 <input type="date" name="date" value="{{ selected.isoformat() }}" required></label>
-      <label>球檯 <select name="table_no" required>{% for no in range(1, table_count + 1) %}<option value="{{ no }}">{{ no }} 號桌</option>{% endfor %}</select></label>
+    <form class="schedule-form" id="reservation-create-form" method="post" action="{{ url_for('reservations.save_reservation') }}">
+      <input type="hidden" name="date" value="{{ selected.isoformat() }}">
+      <fieldset class="schedule-full reservation-table-picker">
+        <legend>球檯（可複選）</legend>
+        <div class="reservation-table-grid">
+          {% for no in range(1, table_count + 1) %}
+          <label class="reservation-table-option">
+            <input type="checkbox" name="table_nos" value="{{ no }}" {% if loop.first %}checked{% endif %}>
+            <span>{{ table_label(no) }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
       <label>用途 <select name="event_type"><option value="reservation">一般預約</option><option value="course">課程</option><option value="club">社團</option></select></label>
-      <label>姓名／名稱 <input name="guest_name" maxlength="100" required></label>
-      <label>電話 <input name="phone" type="tel" maxlength="40"></label>
-      <label>開始 <input name="start_time" type="time" required></label>
-      <label>結束 <input name="end_time" type="time" required></label>
-      <label>每週重複 <select name="repeat_weeks">{% for weeks in range(1, 25) %}<option value="{{ weeks }}">{{ weeks }} 週</option>{% endfor %}</select></label>
-      <label class="schedule-full">備註 <input name="note" maxlength="500"></label>
-      <button type="submit">儲存預約</button>
+      <label>名稱／電話 <input name="guest_name" maxlength="100" required></label>
+      <label>開始 <input name="start_time" type="time" step="300" required></label>
+      <label>結束（選填） <input name="end_time" type="time" step="300"></label>
+      <label class="checkbox-inline schedule-full"><input type="checkbox" name="ends_next_day" value="1">結束時間為隔天</label>
+      <label>備註 <input name="note" maxlength="500"></label>
+      <div class="schedule-submit-cell"><button type="submit">儲存預約</button></div>
     </form>
-    <p class="muted">同一球檯的預約不可重疊；預約不會自動開桌。</p>
   </article>
 
   <article class="panel">
@@ -91,10 +99,9 @@
       <label>地點（選填） <input name="location" maxlength="120" placeholder="例如：吧檯旁、3 號桌區"></label>
       <label>開始（選填） <input type="time" name="start_time"></label>
       <label>結束（選填） <input type="time" name="end_time"></label>
-      <label class="schedule-full">備註 <input name="note" maxlength="500"></label>
-      <button type="submit">新增事項</button>
+      <label>備註 <input name="note" maxlength="500"></label>
+      <div class="schedule-submit-cell"><button type="submit">新增事項</button></div>
     </form>
-    <p class="muted">日期可以清空。沒有日期的項目會放入未排日期待辦；若填寫時間，開始與結束需一起填寫。</p>
   </article>
 </section>
 
@@ -103,31 +110,39 @@
     <h2>{{ selected.isoformat() }} 球檯預約</h2>
     {% for item in reservations %}
       <div class="schedule-entry">
-        <strong>{{ item.start_time[11:16] }}–{{ item.end_time[11:16] }} · {{ item.table_no }} 號桌</strong>
+        <strong>{{ item.start_time[11:16] }}{% if item.end_time %}–{{ item.end_time[11:16] }}{% else %} 起{% endif %} · {{ table_label(item.table_no) }}</strong>
         <span>{{ item.guest_name }} · {{ {'reservation': '一般預約', 'course': '課程', 'club': '社團'}[item.event_type] }}</span>
         {% if item.phone %}<span>電話：{{ item.phone }}</span>{% endif %}
         {% if item.note %}<span>備註：{{ item.note }}</span>{% endif %}
+        {% if item.end_time and item.end_time[:10] != item.start_time[:10] %}<span>跨日：{{ item.start_time[:10] }} 至 {{ item.end_time[:10] }}</span>{% endif %}
+        {% if item.status == 'completed' %}<span>已完成</span>{% else %}
         <details>
           <summary>修改預約</summary>
           <form class="schedule-form" method="post" action="{{ url_for('reservations.save_reservation', reservation_id=item.id) }}">
             <label>日期 <input type="date" name="date" value="{{ item.start_time[:10] }}" required></label>
-            <label>球檯 <select name="table_no" required>{% for no in range(1, table_count + 1) %}<option value="{{ no }}" {% if no == item.table_no %}selected{% endif %}>{{ no }} 號桌</option>{% endfor %}</select></label>
+            <label>球檯 <select name="table_no" required>{% for no in range(1, table_count + 1) %}<option value="{{ no }}" {% if no == item.table_no %}selected{% endif %}>{{ table_label(no) }}</option>{% endfor %}</select></label>
             <label>用途 <select name="event_type">{% for value, label in [('reservation', '一般預約'), ('course', '課程'), ('club', '社團')] %}<option value="{{ value }}" {% if value == item.event_type %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-            <label>姓名／名稱 <input name="guest_name" value="{{ item.guest_name }}" maxlength="100" required></label>
-            <label>電話 <input name="phone" type="tel" value="{{ item.phone }}" maxlength="40"></label>
-            <label>開始 <input name="start_time" type="time" value="{{ item.start_time[11:16] }}" required></label>
-            <label>結束 <input name="end_time" type="time" value="{{ item.end_time[11:16] }}" required></label>
+            <label>名稱／電話 <input name="guest_name" value="{{ item.guest_name }}" maxlength="100" required></label>
+            <input type="hidden" name="phone" value="{{ item.phone }}">
+            <label>開始 <input name="start_time" type="time" step="300" value="{{ item.start_time[11:16] }}" required></label>
+            <label>結束（選填） <input name="end_time" type="time" step="300" value="{{ item.end_time[11:16] if item.end_time else '' }}"></label>
+            <label class="checkbox-inline schedule-full"><input type="checkbox" name="ends_next_day" value="1" {% if item.end_time and item.end_time[:10] != item.start_time[:10] %}checked{% endif %}>結束時間為隔天</label>
             <label class="schedule-full">備註 <input name="note" value="{{ item.note }}" maxlength="500"></label>
             <button type="submit">更新</button>
           </form>
         </details>
+        <form method="post" action="{{ url_for('reservations.complete_reservation', reservation_id=item.id) }}">
+          <input type="hidden" name="date" value="{{ selected.isoformat() }}">
+          <button type="submit">完成預約</button>
+        </form>
         <form method="post" action="{{ url_for('reservations.cancel_reservation', reservation_id=item.id) }}" onsubmit="return confirm('確定取消這筆預約？');">
           <input type="hidden" name="date" value="{{ selected.isoformat() }}">
           <button type="submit" class="danger">取消預約</button>
         </form>
+        {% endif %}
       </div>
     {% else %}
-      <p class="muted">這一天沒有球檯預約。</p>
+      <p class="muted calendar-day-empty">這一天沒有球檯預約。</p>
     {% endfor %}
   </article>
 
@@ -137,7 +152,7 @@
       {% for item in calendar_items %}
         {{ calendar_item_card(item, selected.isoformat(), calendar_item_types) }}
       {% else %}
-        <p class="muted">這一天沒有其他事項。</p>
+        <p class="muted calendar-day-empty">這一天沒有其他事項。</p>
       {% endfor %}
     </div>
   </article>
@@ -145,7 +160,7 @@
 
 <section class="panel">
   <div class="panel-head">
-    <div><h2>未排日期待辦</h2><p class="muted">尚未決定處理日期的館內事項</p></div>
+    <div><h2>未排日期待辦</h2></div>
     <span class="status-badge">{{ unscheduled_items|length }} 項待處理</span>
   </div>
   <div class="calendar-item-list calendar-todo-list">
@@ -179,5 +194,16 @@ document.querySelectorAll('.calendar-item-form').forEach(form => {
   toggle.addEventListener('change', updateFields);
   updateFields();
 });
+
+const reservationForm = document.getElementById('reservation-create-form');
+if (reservationForm) {
+  const tableOptions = [...reservationForm.querySelectorAll('[name="table_nos"]')];
+  reservationForm.addEventListener('submit', event => {
+    if (!tableOptions.some(option => option.checked)) {
+      event.preventDefault();
+      window.alert('請至少選擇一張球桌。');
+    }
+  });
+}
 </script>
 {% endblock %}

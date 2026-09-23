@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import os
 import sys
 import threading
@@ -11,6 +12,7 @@ import webbrowser
 from waitress import create_server
 
 from billiard_app import create_app
+from billiard_app.maintenance import start_backup_scheduler
 
 
 HOST = "127.0.0.1"
@@ -77,13 +79,19 @@ def main() -> int:
         app = create_app()
         server = create_server(app, host=HOST, port=port, threads=4)
     except Exception as exc:
+        logging.getLogger("billiard").exception("Desktop startup failed")
         show_startup_error(exc)
         return 1
 
     print("撞球館管理系統已啟動")
     print(f"操作網址：{url}")
     print(f"資料庫：{app.config['DATABASE']}")
+    if app.config.get("BACKUP_WARNING"):
+        print(f"警告：{app.config['BACKUP_WARNING']}")
     print("關閉此視窗或按 Ctrl+C 即可停止程式。")
+    backup_stop = start_backup_scheduler(
+        app.config["DATABASE"], os.environ.get("BILLIARD_BACKUP_DIR", "")
+    )
     threading.Thread(
         target=open_browser_when_ready,
         args=(url,),
@@ -94,6 +102,7 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n正在關閉撞球館管理系統...")
     finally:
+        backup_stop.set()
         server.close()
     return 0
 

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import os
+import logging
 import secrets
 import sys
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, flash, redirect, url_for
 
 from .config import PROJECT_ROOT
-from .db import init_app as init_database
-from .money import format_cents
+from .db import init_app as init_database, table_label
+from .maintenance import backup_warning, configure_file_logging, create_daily_backups, create_recent_backups, verify_database
+from .money import format_cents, MoneyLimitError
+from .security import add_csrf_fields, csrf_token, protect_unsafe_request
+from .write_guard import acquire_write_guard, release_write_guard
+from .operations import check_operation
 
 
 def _ensure_writable_directory(directory: Path) -> None:
@@ -19,6 +24,14 @@ def _ensure_writable_directory(directory: Path) -> None:
         probe.write_bytes(b"")
     finally:
         probe.unlink(missing_ok=True)
+
+
+def _database_file_exists(path: Path) -> bool:
+    try:
+        path.stat()
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def default_database_path() -> Path:
@@ -33,6 +46,19 @@ def default_database_path() -> Path:
             else Path.home() / ".billiard-manager"
         )
         fallback_directory = Path(sys.executable).resolve().parent / "data"
+        primary = primary_directory / "billiard.db"
+        fallback = fallback_directory / "billiard.db"
+        primary_exists = _database_file_exists(primary)
+        fallback_exists = _database_file_exists(fallback) if fallback != primary else False
+        if primary_exists and fallback_exists:
+            raise OSError(
+                f"找到兩份資料庫：{primary}；{fallback}。"
+                "為避免選錯資料，請先確認資料內容，並用 BILLIARD_DATABASE 指定正式資料庫。"
+            )
+        existing = primary if primary_exists else fallback if fallback_exists else None
+        if existing is not None:
+            _ensure_writable_directory(existing.parent)
+            return existing
         errors = []
         for data_directory in dict.fromkeys((primary_directory, fallback_directory)):
             try:
@@ -60,9 +86,26 @@ def create_app(test_config: dict | None = None) -> Flask:
         MAX_CONTENT_LENGTH=1024 * 1024,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
+        CSRF_ENABLED=True,
+        TRUSTED_HOSTS=("127.0.0.1", "localhost", "::1"),
     )
     if test_config:
         app.config.update(test_config)
+        if app.config.get("TESTING") and "CSRF_ENABLED" not in test_config:
+            app.config["CSRF_ENABLED"] = False
+
+    if not app.config.get("TESTING") and app.config["DATABASE"] != ":memory:":
+        database = app.config["DATABASE"]
+        app.config["LOG_FILE"] = str(configure_file_logging(database))
+        for handler in logging.getLogger("billiard").handlers:
+            if handler not in app.logger.handlers:
+                app.logger.addHandler(handler)
+        if Path(database).exists():
+            try:
+                verify_database(Path(database), require_schema=False)
+            except Exception:
+                app.logger.exception("Database startup check failed")
+                raise
 
     from .blueprints.finance import bp as finance_bp
     from .blueprints.menu import bp as menu_bp
@@ -80,13 +123,45 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.register_blueprint(reservations_bp)
     app.register_blueprint(shifts_bp)
     app.jinja_env.filters["money"] = format_cents
+    app.jinja_env.globals["table_label"] = table_label
+    app.jinja_env.globals["csrf_token"] = csrf_token
+
+    @app.before_request
+    def validate_unsafe_request():
+        protect_unsafe_request()
+        acquire_write_guard()
+        return check_operation()
+
+    app.teardown_request(release_write_guard)
+
+    @app.errorhandler(MoneyLimitError)
+    def invalid_calculated_amount(error):
+        from .db import get_db
+        get_db().rollback()
+        flash(str(error) + " 本次操作未儲存。", "error")
+        return redirect(url_for("tables.dashboard"))
 
     @app.after_request
     def add_security_headers(response):
+        response = add_csrf_fields(response)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         return response
 
-    init_database(app)
+    try:
+        init_database(app)
+    except Exception:
+        app.logger.exception("Database initialization failed")
+        raise
+    if not app.config.get("TESTING") and app.config["DATABASE"] != ":memory:":
+        database = app.config["DATABASE"]
+        extra = os.environ.get("BILLIARD_BACKUP_DIR", "")
+        try:
+            create_daily_backups(database, extra)
+            create_recent_backups(database, extra)
+            app.config["BACKUP_WARNING"] = backup_warning(database, extra)
+        except Exception as exc:
+            app.logger.exception("Automatic backup failed")
+            app.config["BACKUP_WARNING"] = f"自動備份失敗：{exc}。請檢查備份目錄與錯誤日誌。"
     return app

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title or '撞球館管理系統' }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='20260917-3') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='20260922-8') }}">
 </head>
 <body>
   <header class="topbar">
@@ -13,9 +13,7 @@
       <a href="{{ url_for('tables.dashboard') }}">球檯總覽</a>
       <a href="{{ url_for('reservations.calendar_page') }}">行事曆／預約</a>
       <a href="{{ url_for('shifts.shifts_page') }}">班表</a>
-      <a href="{{ url_for('menu.menu_page') }}">餐點管理</a>
       <a href="{{ url_for('stats.stats_page') }}">營業統計</a>
-      <a href="{{ url_for('finance.finance_page') }}">收支管理</a>
       <a href="{{ url_for('settings.general_settings_page') }}">整體設定</a>
     </nav>
   </header>
@@ -23,11 +21,40 @@
   <main class="container">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
+        {% set regular_messages = messages | rejectattr('0', 'equalto', 'checkout') | list %}
+        {% set checkout_messages = messages | selectattr('0', 'equalto', 'checkout') | list %}
+        {% if regular_messages %}
         <section class="flash-list">
-          {% for category, message in messages %}
+          {% for category, message in regular_messages %}
             <div class="flash flash-{{ category }}">{{ message }}</div>
           {% endfor %}
         </section>
+        {% endif %}
+
+        {% if checkout_messages %}
+        <dialog class="checkout-confirm-dialog js-checkout-confirm" aria-labelledby="checkout-confirm-title">
+          <div class="checkout-confirm-icon" aria-hidden="true">✓</div>
+          <h2 id="checkout-confirm-title">結帳完成</h2>
+          {% for category, message in checkout_messages %}
+          <p>{{ message }}</p>
+          {% endfor %}
+          <button class="checkout-confirm-button js-checkout-confirm-button" type="button" autofocus>確認</button>
+        </dialog>
+        <script>
+        (function () {
+          const dialog = document.querySelector(".js-checkout-confirm");
+          const confirmButton = document.querySelector(".js-checkout-confirm-button");
+          if (!dialog || !confirmButton) return;
+          dialog.addEventListener("cancel", (event) => event.preventDefault());
+          confirmButton.addEventListener("click", () => dialog.close());
+          if (typeof dialog.showModal === "function") {
+            dialog.showModal();
+          } else {
+            dialog.setAttribute("open", "");
+          }
+        })();
+        </script>
+        {% endif %}
       {% endif %}
     {% endwith %}
 

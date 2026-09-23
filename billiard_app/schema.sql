@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
 
 CREATE TABLE IF NOT EXISTS table_rates (
     table_no INTEGER PRIMARY KEY CHECK(table_no > 0),
+    display_name TEXT NOT NULL DEFAULT '',
     timed_rate_per_min_cents INTEGER NOT NULL CHECK(timed_rate_per_min_cents > 0),
     package_rate_per_hour_cents INTEGER NOT NULL CHECK(package_rate_per_hour_cents > 0),
     package_enabled INTEGER NOT NULL DEFAULT 1 CHECK(package_enabled IN (0, 1)),
@@ -52,13 +53,36 @@ CREATE TABLE IF NOT EXISTS discount_types (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS customer_tabs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name TEXT NOT NULL DEFAULT '',
+    guest_count INTEGER NOT NULL DEFAULT 1 CHECK(guest_count > 0),
+    table_no INTEGER CHECK(table_no IS NULL OR table_no > 0),
+    status TEXT NOT NULL DEFAULT 'waiting'
+        CHECK(status IN ('waiting', 'assigned', 'playing', 'closed')),
+    opened_at TEXT NOT NULL,
+    closed_at TEXT,
+    final_total_cents INTEGER NOT NULL DEFAULT 0 CHECK(final_total_cents >= 0),
+    CHECK((status = 'waiting' AND table_no IS NULL) OR
+          (status IN ('assigned', 'playing') AND table_no IS NOT NULL) OR
+          status = 'closed')
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_tabs_occupied_table
+    ON customer_tabs(table_no) WHERE status IN ('assigned', 'playing');
+
+CREATE INDEX IF NOT EXISTS idx_customer_tabs_closed
+    ON customer_tabs(status, closed_at);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_tab_id INTEGER REFERENCES customer_tabs(id),
     table_no INTEGER NOT NULL,
     mode TEXT NOT NULL CHECK(mode IN ('timed', 'package')),
     start_time TEXT NOT NULL,
     end_time TEXT,
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'closed')),
+    is_free_practice INTEGER NOT NULL DEFAULT 0 CHECK(is_free_practice IN (0, 1)),
     package_hours INTEGER,
     rate_per_min_cents INTEGER,
     rate_per_hour_cents INTEGER,
@@ -85,12 +109,40 @@ CREATE INDEX IF NOT EXISTS idx_sessions_closed_end_time
 CREATE INDEX IF NOT EXISTS idx_sessions_start_time
     ON sessions(start_time);
 
+CREATE TABLE IF NOT EXISTS session_transfers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    from_table INTEGER NOT NULL,
+    to_table INTEGER NOT NULL,
+    transferred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_discount_types_active
     ON discount_types(is_active, name);
 
+CREATE TABLE IF NOT EXISTS payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_tab_id INTEGER NOT NULL,
+    session_id INTEGER,
+    payment_type TEXT NOT NULL
+        CHECK(payment_type IN ('package_start', 'package_extension', 'package_food', 'package_close', 'timed_close', 'food_only')),
+    table_fee_cents INTEGER NOT NULL DEFAULT 0 CHECK(table_fee_cents >= 0),
+    food_fee_cents INTEGER NOT NULL DEFAULT 0 CHECK(food_fee_cents >= 0),
+    discount_amount_cents INTEGER NOT NULL DEFAULT 0 CHECK(discount_amount_cents >= 0),
+    amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
+    paid_at TEXT NOT NULL,
+    FOREIGN KEY(customer_tab_id) REFERENCES customer_tabs(id),
+    FOREIGN KEY(session_id) REFERENCES sessions(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_paid_at ON payments(paid_at);
+CREATE INDEX IF NOT EXISTS idx_payments_session_id ON payments(session_id);
+CREATE INDEX IF NOT EXISTS idx_payments_customer_tab_id ON payments(customer_tab_id);
+
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
+    customer_tab_id INTEGER NOT NULL,
+    session_id INTEGER,
     item_id INTEGER NOT NULL,
     item_name TEXT NOT NULL,
     item_category_name TEXT NOT NULL DEFAULT '',
@@ -100,8 +152,12 @@ CREATE TABLE IF NOT EXISTS orders (
     unit_price_cents INTEGER NOT NULL,
     quantity INTEGER NOT NULL,
     subtotal_cents INTEGER NOT NULL,
+    payment_id INTEGER,
+    paid_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(session_id) REFERENCES sessions(id)
+    FOREIGN KEY(session_id) REFERENCES sessions(id),
+    FOREIGN KEY(customer_tab_id) REFERENCES customer_tabs(id),
+    FOREIGN KEY(payment_id) REFERENCES payments(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_session_id ON orders(session_id);
@@ -116,11 +172,11 @@ CREATE TABLE IF NOT EXISTS reservations (
     phone TEXT NOT NULL DEFAULT '',
     event_type TEXT NOT NULL DEFAULT 'reservation',
     start_time TEXT NOT NULL,
-    end_time TEXT NOT NULL,
+    end_time TEXT NOT NULL DEFAULT '',
     note TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'cancelled')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'cancelled', 'completed')),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK(end_time > start_time)
+    CHECK(end_time = '' OR end_time > start_time)
 );
 
 CREATE INDEX IF NOT EXISTS idx_reservations_time
@@ -142,7 +198,10 @@ CREATE TABLE IF NOT EXISTS calendar_items (
     CHECK(scheduled_date IS NULL OR length(scheduled_date) = 10),
     CHECK(
         (start_time = '' AND end_time = '') OR
-        (scheduled_date IS NOT NULL AND start_time != '' AND end_time > start_time)
+        (
+            scheduled_date IS NOT NULL AND start_time != ''
+            AND (end_time = '' OR end_time > start_time)
+        )
     )
 );
 
@@ -205,3 +264,19 @@ CREATE TABLE IF NOT EXISTS expenses (
 );
 
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date);
+CREATE TABLE IF NOT EXISTS operation_receipts (
+    id TEXT PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL,
+    before_value TEXT NOT NULL,
+    after_value TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(id DESC);

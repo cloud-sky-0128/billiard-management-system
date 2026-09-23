@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h1>操作紀錄</h1>
+      <p class="muted">最近 200 筆高風險操作；共用管理員登入無法識別個別員工。</p>
+    </div>
+    <a class="btn-link" href="{{ url_for('settings.general_settings_page') }}">回整體設定</a>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>時間</th><th>操作</th><th>對象</th><th>操作前</th><th>操作後</th></tr></thead>
+      <tbody>
+        {% for event in events %}
+        <tr>
+          <td>{{ event.created_at }}</td>
+          <td>{{ action_labels.get(event.action, event.action) }}</td>
+          <td>{{ event.target }}</td>
+          <td>{{ event.before_value }}</td>
+          <td>{{ event.after_value }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">目前沒有操作紀錄。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -36,11 +36,11 @@ EMPLOYEE_COLOR_PALETTE = [
 ]
 
 CALENDAR_ITEM_TYPES = {
-    "todo": {"label": "待辦", "color": "#D4B483"},
+    "todo": {"label": "待辦", "color": "#B78BC4"},
     "maintenance": {"label": "維修", "color": "#C96A4A"},
     "event": {"label": "活動", "color": "#3D7EA6"},
     "competition": {"label": "比賽", "color": "#568C65"},
-    "other": {"label": "其他", "color": "#8A67A5"},
+    "other": {"label": "其他", "color": "#A9B0BA"},
 }
 
 SEED_MENU = {

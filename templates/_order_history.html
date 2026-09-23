@@ -1,0 +1,36 @@
+<section class="panel">
+  <h3>已點餐紀錄</h3>
+  <table>
+    <thead><tr><th>品項</th><th>甜度</th><th>溫度/冰塊</th><th>數量</th><th>小計</th><th>付款狀態</th><th>操作</th></tr></thead>
+    <tbody>
+      {% for order in order_rows %}
+      <tr>
+        <td>{{ order.item_name }}</td>
+        <td>{{ order.sugar_level or '-' }}</td>
+        <td>{{ order.ice_level or '-' }}</td>
+        <td>{{ order.quantity }}</td>
+        <td>{{ order.subtotal_cents|money }} 元</td>
+        <td>
+          {% if order.payment_id %}
+          <span class="status-badge status-open">已付款</span>
+          {% else %}
+          <span class="status-badge status-waiting">未付款</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if not order.payment_id %}
+          <form class="inline-form" method="post" action="{{ url_for('tables.delete_order', order_id=order.id) }}" onsubmit="return confirm('確定刪除這筆訂單嗎？');">
+            <input type="hidden" name="category_id" value="{{ selected_category_id or '' }}">
+            <button type="submit" class="danger">刪除</button>
+          </form>
+          {% else %}
+          <span class="muted">不可刪除</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">尚未點餐</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

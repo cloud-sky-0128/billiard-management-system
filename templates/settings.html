@@ -1,38 +1,190 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="panel">
-  <h1>整體設定</h1>
-  <p class="muted">管理系統設定與高風險維護操作</p>
+  <div class="panel-head settings-title-row">
+    <div>
+      <h1>整體設定</h1>
+      <p class="muted">管理系統設定與高風險維護操作</p>
+    </div>
+    <form method="post" action="{{ url_for('settings.admin_logout') }}">
+      <button type="submit">管理員登出</button>
+    </form>
+  </div>
 </section>
 
 <section class="settings-links">
   <a class="settings-link-card" href="{{ url_for('settings.rate_settings_page') }}"><strong>費率與球檯</strong><span>球檯數量、計時及包台費率</span></a>
   <a class="settings-link-card" href="{{ url_for('shifts.shift_settings_page') }}"><strong>排班設定</strong><span>員工名單與班別管理</span></a>
+  <a class="settings-link-card" href="{{ url_for('menu.menu_page') }}"><strong>餐點管理</strong><span>餐點類別、品項與售價管理</span></a>
   <a class="settings-link-card" href="{{ url_for('finance.finance_page') }}"><strong>收支管理</strong><span>實收、支出與月報</span></a>
+  <a class="settings-link-card" href="{{ url_for('settings.audit_log_page') }}"><strong>操作紀錄</strong><span>查看刪單、實收修改、刪支出與清除資料</span></a>
+  <button type="button" class="settings-link-card settings-modal-trigger" data-dialog-open="admin-password-dialog">
+    <strong>管理員密碼</strong><span>變更進入整體設定所需的密碼</span>
+  </button>
+  <button type="button" class="settings-link-card settings-modal-trigger" data-dialog-open="backup-settings-dialog">
+    <strong>資料保護</strong><span>備份狀態、手動備份與安全檢查</span>
+  </button>
+  <button type="button" class="settings-link-card settings-modal-trigger is-danger" data-dialog-open="reset-data-dialog">
+    <strong>清除測試資料</strong><span>清除營運測試紀錄並保留基本設定</span>
+  </button>
 </section>
 
+<dialog class="settings-dialog settings-compact-dialog" id="admin-password-dialog" aria-labelledby="admin-password-title">
+  <div class="settings-dialog-frame">
+    <header class="settings-dialog-header">
+      <div><span>整體設定</span><h2 id="admin-password-title">變更管理員密碼</h2></div>
+      <button type="button" class="settings-dialog-close" data-dialog-close aria-label="關閉管理員密碼視窗">×</button>
+    </header>
+    <div class="settings-dialog-scroll">
+      <form class="panel admin-password-form" method="post" action="{{ url_for('settings.update_admin_password') }}">
+        <p class="muted">變更後，下次登入請使用新密碼。密碼至少需要 8 個字元。</p>
+        <label>目前密碼 <input type="password" name="current_password" autocomplete="current-password" required></label>
+        <label>新密碼 <input type="password" name="new_password" minlength="8" autocomplete="new-password" required></label>
+        <label>再次輸入新密碼 <input type="password" name="new_password_confirmation" minlength="8" autocomplete="new-password" required></label>
+        <button type="submit">更新管理員密碼</button>
+      </form>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="settings-dialog" id="backup-settings-dialog" aria-labelledby="backup-settings-title">
+  <div class="settings-dialog-frame">
+    <header class="settings-dialog-header">
+      <div><span>整體設定</span><h2 id="backup-settings-title">資料保護</h2></div>
+      <button type="button" class="settings-dialog-close" data-dialog-close aria-label="關閉資料保護視窗">×</button>
+    </header>
+    <div class="settings-dialog-scroll">
+<section class="panel backup-panel">
+  <div class="backup-heading">
+    <div>
+      <p class="section-kicker">BACKUP CENTER</p>
+      <h2>資料備份</h2>
+      <p class="muted">系統會自動保存營運資料；需要更新程式或進行重要操作前，也可以手動多留一份。</p>
+      <p class="muted">每份都是完整資料庫快照；每日備份保留當天第一份，日內變更由每 15 分鐘的新快照保存。</p>
+    </div>
+    <span class="backup-health {% if backup_warning %}is-warning{% else %}is-healthy{% endif %}">
+      <i aria-hidden="true"></i>{{ '需要檢查' if backup_warning else '備份正常' }}
+    </span>
+  </div>
+  {% if backup_warning %}<p class="finance-warning backup-warning">{{ backup_warning }}</p>{% endif %}
+
+  <div class="backup-overview">
+    <article>
+      <span class="backup-overview-label">最近一份備份</span>
+      {% if latest_backup %}
+      <strong>{{ latest_backup.created_at }}</strong>
+      <small>{{ latest_backup.display_name }} · {{ latest_backup.size }}</small>
+      {% else %}
+      <strong>尚未建立</strong>
+      <small>按下方按鈕建立第一份備份</small>
+      {% endif %}
+    </article>
+    <article>
+      <span class="backup-overview-label">自動保留</span>
+      <strong>16 份＋30 天＋12 個月</strong>
+      <small>每 15 分鐘快照保留 16 份；每日備份 30 天，每月備份 12 個月</small>
+    </article>
+    <article>
+      <span class="backup-overview-label">外部備份</span>
+      <strong>{{ '已啟用' if extra_backup else '尚未啟用' }}</strong>
+      <small>{{ '同步保留第二份資料' if extra_backup else '目前只保存在這台電腦' }}</small>
+    </article>
+  </div>
+
+  <div class="backup-task-grid">
+    <article class="backup-task is-primary">
+      <span class="backup-step">01</span>
+      <div>
+        <h3>現在建立一份備份</h3>
+        <p>適合在更新程式、調整設定或清除測試資料前使用。</p>
+      </div>
+      <form method="post" action="{{ url_for('settings.create_manual_backup') }}">
+        <button type="submit" class="backup-primary-button">建立新備份</button>
+      </form>
+    </article>
+
+    <article class="backup-task">
+      <span class="backup-step">02</span>
+      <div>
+        <h3>檢查備份是否可用</h3>
+        <p>系統會在安全的暫存空間測試備份，不會更動目前的營運資料。</p>
+      </div>
+      {% if backup_options %}
+      <form method="post" action="{{ url_for('settings.run_restore_drill') }}">
+        <label for="backup-name">選擇要檢查的備份</label>
+        <select id="backup-name" name="backup_name">
+          {% for backup in backup_options %}<option value="{{ backup.name }}">{{ backup.display_name }} · {{ backup.size }}</option>{% endfor %}
+        </select>
+        <button type="submit">開始安全檢查</button>
+      </form>
+      {% else %}
+      <p class="backup-empty">建立第一份備份後，就可以在這裡檢查。</p>
+      {% endif %}
+    </article>
+  </div>
+
+  <details class="backup-details">
+    <summary>查看備份位置與錯誤日誌</summary>
+    <dl>
+      <div><dt>本機備份</dt><dd><code>{{ backup_directory }}</code></dd></div>
+      <div><dt>外部備份</dt><dd>{% if extra_backup %}<code>{{ extra_backup }}</code>{% else %}未設定；正式營運建議使用另一顆磁碟或外接硬碟。{% endif %}</dd></div>
+      {% if log_file %}<div><dt>錯誤日誌</dt><dd><code>{{ log_file }}</code></dd></div>{% endif %}
+    </dl>
+  </details>
+</section>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="settings-dialog settings-danger-dialog" id="reset-data-dialog" aria-labelledby="reset-data-title">
+  <div class="settings-dialog-frame">
+    <header class="settings-dialog-header">
+      <div><span>整體設定</span><h2 id="reset-data-title">清除測試資料</h2></div>
+      <button type="button" class="settings-dialog-close" data-dialog-close aria-label="關閉清除資料視窗">×</button>
+    </header>
+    <div class="settings-dialog-scroll">
 <section class="panel danger-zone">
   <h2>危險操作：清除測試營運資料</h2>
   <p>適合開發測試結束後使用。這會永久刪除：</p>
   <ul>
-    <li>球檯開台、結帳與訂單紀錄</li>
+    <li>球檯開台、消費單、結帳與訂單紀錄</li>
     <li>每日實際實收紀錄</li>
     <li>所有支出紀錄</li>
     <li>預約、行事曆事項與班表</li>
   </ul>
   <p>員工、班別、菜單、類別、桌數與費率都會保留。刪除前會自動備份完整資料庫。</p>
   <div class="reset-counts">
-    <span>已結帳：{{ counts.closed_sessions }}</span><span>開台中：{{ counts.active_sessions }}</span>
-    <span>訂單：{{ counts.orders }}</span><span>實收日數：{{ counts.cash_records }}</span><span>支出：{{ counts.expenses }}</span>
+    <span>已結帳消費單：{{ counts.closed_tabs }}</span><span>進行中消費單：{{ counts.open_tabs }}</span>
+    <span>訂單：{{ counts.orders }}</span><span>收款紀錄：{{ counts.payments }}</span><span>實收日數：{{ counts.cash_records }}</span><span>支出：{{ counts.expenses }}</span>
     <span>預約：{{ counts.reservations }}</span><span>行事曆事項：{{ counts.calendar_items }}</span><span>班次：{{ counts.shifts }}</span>
     <span>保留員工：{{ counts.employees }}</span><span>保留班別：{{ counts.shift_types }}</span><span>保留菜單品項：{{ counts.menu_items }}</span>
   </div>
-  {% if counts.active_sessions %}<p class="finance-warning">目前仍有 {{ counts.active_sessions }} 桌開台中，系統不允許清除。</p>{% endif %}
+  {% if counts.open_tabs %}<p class="finance-warning">目前仍有 {{ counts.open_tabs }} 筆消費單進行中，系統不允許清除。</p>{% endif %}
   <form class="reset-form" method="post" action="{{ url_for('settings.reset_test_data') }}" onsubmit="return confirm('最後確認：真的要刪除營收、訂單、實收、支出、預約、行事曆事項與班表資料嗎？');">
     <label class="checkbox-inline"><input type="checkbox" name="confirm_scope" value="yes" required>我了解指定的營運資料會被清除，而且知道刪除前會建立備份</label>
     <label>輸入確認文字 <code>{{ confirmation_phrase }}</code><input name="confirmation" autocomplete="off" required></label>
     <label>輸入今天日期 <code>{{ today }}</code><input type="date" name="confirmation_date" required></label>
-    <button type="submit" class="danger" {% if counts.active_sessions %}disabled{% endif %}>建立備份並永久清除測試資料</button>
+    <button type="submit" class="danger" {% if counts.open_tabs %}disabled{% endif %}>建立備份並永久清除測試資料</button>
   </form>
 </section>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  document.querySelectorAll("[data-dialog-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const dialog = document.getElementById(button.dataset.dialogOpen);
+      if (!dialog) return;
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+    });
+  });
+  document.querySelectorAll(".settings-dialog").forEach((dialog) => {
+    const closeButton = dialog.querySelector("[data-dialog-close]");
+    if (closeButton) closeButton.addEventListener("click", () => dialog.close());
+  });
+})();
+</script>
 {% endblock %}

@@ -2,10 +2,15 @@
 {% block content %}
 <section class="panel">
   <div class="panel-head">
-    <div><h1>班表</h1><p class="muted">月曆直接顯示每日班次</p></div>
+    <div><h1>班表</h1></div>
     <div class="action-row">
-      <a class="btn-link" href="{{ url_for('shifts.shift_settings_page') }}">排班設定</a>
-      <button type="button" id="export-shifts">下載月曆班表 PNG</button>
+      <label class="shift-export-label">下載
+        <select id="export-employee">
+          <option value="">全部員工</option>
+          {% for employee in export_employees %}<option value="{{ employee.id }}">{{ employee.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="button" id="export-shifts">班表 PNG</button>
     </div>
   </div>
   {% set endpoint = 'shifts.shifts_page' %}
@@ -14,7 +19,7 @@
 
 <section class="two-col shift-management">
   <article class="panel">
-    <h2>{{ month.strftime('%Y 年 %m 月') }} 批次排班</h2>
+    <h2>{{ month.strftime('%Y 年 %m 月') }} 排班</h2>
     <form class="schedule-form" method="post" action="{{ url_for('shifts.save_shift') }}">
       <input type="hidden" name="date" value="{{ selected.isoformat() }}">
       <label>員工
@@ -29,6 +34,11 @@
       </label>
       <label>開始 <input id="shift-start" name="start_time" type="time" value="{{ shift_types[0].start_time if shift_types else '' }}" required></label>
       <label>結束 <span class="muted shift-end-hint">{{ '隔天' if shift_types and shift_types[0].ends_next_day else '當天' }}</span><input id="shift-end" name="end_time" type="time" value="{{ shift_types[0].end_time if shift_types else '' }}" required></label>
+      <input type="hidden" name="has_ends_next_day_control" value="1">
+      <label class="checkbox-inline schedule-full shift-next-day-option">
+        <input type="checkbox" name="ends_next_day" value="1" {% if shift_types and shift_types[0].ends_next_day %}checked{% endif %}>
+        結束時間為隔天
+      </label>
       <fieldset class="schedule-full date-picker-grid">
         <legend>排班日期（可複選）</legend>
         <div class="date-picker-actions">
@@ -52,8 +62,8 @@
           {% endfor %}
         {% endfor %}
       </fieldset>
-      <label class="schedule-full">備註 <input name="note" maxlength="500"></label>
-      <button type="submit" {% if not employees or not shift_types %}disabled{% endif %}>一次建立所選日期</button>
+      <label>備註 <input name="note" maxlength="500"></label>
+      <div class="schedule-submit-cell"><button type="submit" {% if not employees or not shift_types %}disabled{% endif %}>一次建立所選日期</button></div>
       {% if not shift_types %}<p class="muted schedule-full">請先到排班設定新增班別。</p>{% endif %}
     </form>
   </article>
@@ -73,19 +83,27 @@
             <label>日期 <input name="date" type="date" value="{{ shift.start_time[:10] }}" required></label>
             <label>員工
               <select name="employee_id" required>
+                {% if shift.employee_id not in employees | map(attribute='id') | list %}
+                <option value="{{ shift.employee_id }}" selected>{{ shift.staff_name }}（已停用）</option>
+                {% endif %}
                 {% for employee in employees %}<option value="{{ employee.id }}" {% if employee.id == shift.employee_id %}selected{% endif %}>{{ employee.name }}</option>{% endfor %}
               </select>
             </label>
             <label>班別
               <select name="shift_type_id" class="js-shift-type-select" required>
                 {% if shift.shift_type_id not in shift_types | map(attribute='id') | list %}
-                  <option value="" selected disabled>{{ shift.shift_type_label }}（已刪除）</option>
+                  <option value="{{ shift.shift_type_id }}" selected>{{ shift.shift_type_label }}（已停用）</option>
                 {% endif %}
                 {% for shift_type in shift_types %}<option value="{{ shift_type.id }}" {% if shift_type.id == shift.shift_type_id %}selected{% endif %}>{{ shift_type.name }}</option>{% endfor %}
               </select>
             </label>
             <label>開始 <input name="start_time" type="time" value="{{ shift.start_time[11:16] }}" required></label>
             <label>結束 <span class="muted shift-end-hint">{{ '隔天' if shift.end_time[:10] != shift.start_time[:10] else '當天' }}</span><input name="end_time" type="time" value="{{ shift.end_time[11:16] }}" required></label>
+            <input type="hidden" name="has_ends_next_day_control" value="1">
+            <label class="checkbox-inline schedule-full shift-next-day-option">
+              <input type="checkbox" name="ends_next_day" value="1" {% if shift.end_time[:10] != shift.start_time[:10] %}checked{% endif %}>
+              結束時間為隔天
+            </label>
             <label class="schedule-full">備註 <input name="note" value="{{ shift.note }}" maxlength="500"></label>
             <button type="submit">更新</button>
           </form>
@@ -113,8 +131,29 @@
       const form = typeSelect.closest('form');
       form.querySelector('[name="start_time"]').value = selected.start_time;
       form.querySelector('[name="end_time"]').value = selected.end_time;
+      form.querySelector('[name="ends_next_day"]').checked = Boolean(selected.ends_next_day);
       form.querySelector('.shift-end-hint').textContent = selected.ends_next_day ? '隔天' : '當天';
     });
+  });
+
+  document.querySelectorAll('.schedule-form').forEach(form => {
+    const startInput = form.querySelector('[name="start_time"]');
+    const endInput = form.querySelector('[name="end_time"]');
+    const nextDayInput = form.querySelector('[name="ends_next_day"]');
+    const hint = form.querySelector('.shift-end-hint');
+    if (!startInput || !endInput || !nextDayInput || !hint) return;
+    const updateHint = () => {
+      hint.textContent = nextDayInput.checked ? '隔天' : '當天';
+    };
+    const inferNextDay = () => {
+      if (startInput.value && endInput.value) {
+        nextDayInput.checked = endInput.value <= startInput.value;
+      }
+      updateHint();
+    };
+    startInput.addEventListener('change', inferNextDay);
+    endInput.addEventListener('change', inferNextDay);
+    nextDayInput.addEventListener('change', updateHint);
   });
 
   const datePicker = document.querySelector('.date-picker-grid');
@@ -135,10 +174,27 @@
   dateCheckboxes.forEach(checkbox => checkbox.addEventListener('change', updateSelectedDayCount));
   updateSelectedDayCount();
 
-  const entries = {{ calendar_entries | tojson }};
+  const allEntries = {{ calendar_entries | tojson }};
+  const shiftRows = {{ export_shifts | tojson }};
   const year = {{ month.year }};
   const monthIndex = {{ month.month - 1 }};
   document.getElementById('export-shifts').addEventListener('click', () => {
+    const employeeSelect = document.getElementById('export-employee');
+    const employeeId = employeeSelect.value;
+    const employeeName = employeeId ? employeeSelect.options[employeeSelect.selectedIndex].text : '';
+    const entries = employeeId ? {} : allEntries;
+    if (employeeId) {
+      shiftRows
+        .filter(shift => String(shift.employee_id) === employeeId)
+        .forEach(shift => {
+          const key = shift.start_time.slice(0, 10);
+          (entries[key] ||= []).push({
+            time: `${shift.start_time.slice(11, 16)}–${shift.end_time.slice(11, 16)}${shift.start_time.slice(0, 10) !== shift.end_time.slice(0, 10) ? '（隔天）' : ''}`,
+            name: shift.shift_type_label,
+            color: shift.staff_color,
+          });
+        });
+    }
     const width = 1400;
     const headerHeight = 150;
     const weekdayHeight = 54;
@@ -159,7 +215,7 @@
     ctx.fillRect(0, 0, width, headerHeight);
     ctx.fillStyle = '#f3efe5';
     ctx.font = 'bold 42px "Microsoft JhengHei", sans-serif';
-    ctx.fillText(`${year} 年 ${String(monthIndex + 1).padStart(2, '0')} 月班表`, 46, 82);
+    ctx.fillText(`${year} 年 ${String(monthIndex + 1).padStart(2, '0')} 月${employeeName ? ` · ${employeeName}` : ''}班表`, 46, 82);
     ctx.font = '20px "Microsoft JhengHei", sans-serif';
     ctx.fillText('撞球館員工排班', 48, 120);
 
@@ -187,7 +243,7 @@
       ctx.font = '17px "Microsoft JhengHei", sans-serif';
       dayEntries.slice(0, 6).forEach((entry, index) => {
         ctx.fillStyle = entry.color || '#8a5a36';
-        ctx.fillText(`${entry.time} ${entry.name}`, x + 12, y + 62 + index * 23, cellWidth - 22);
+        ctx.fillText(`${entry.time} ${entry.name}${entry.type ? ` · ${entry.type}` : ''}`, x + 12, y + 62 + index * 23, cellWidth - 22);
       });
       if (dayEntries.length > 6) {
         ctx.fillStyle = '#6b6b6b';
@@ -195,7 +251,8 @@
       }
     }
     const link = document.createElement('a');
-    link.download = `班表-${year}-${String(monthIndex + 1).padStart(2, '0')}.png`;
+    const safeEmployeeName = employeeName.replace(/[\\/:*?"<>|]/g, '-');
+    link.download = `${safeEmployeeName ? `${safeEmployeeName}-` : ''}班表-${year}-${String(monthIndex + 1).padStart(2, '0')}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
   });

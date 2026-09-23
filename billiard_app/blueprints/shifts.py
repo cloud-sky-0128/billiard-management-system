@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 import sqlite3
@@ -6,9 +6,10 @@ from datetime import date, datetime, timedelta
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
+from ..auth import admin_required
 from ..config import EMPLOYEE_COLOR_PALETTE
 from ..db import get_db
-from ..services.scheduling import schedule_redirect, schedule_selection
+from ..services.scheduling import schedule_redirect, schedule_selection, supported_date
 
 bp = Blueprint("shifts", __name__)
 COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -69,6 +70,15 @@ def shifts_page():
     employees = db.execute(
         "SELECT id, name, color FROM employees WHERE is_active = 1 ORDER BY name"
     ).fetchall()
+    export_employees = db.execute(
+        """SELECT id, name FROM employees
+           WHERE is_active = 1 OR id IN (
+               SELECT employee_id FROM shifts
+               WHERE start_time >= ? AND start_time < ?
+           )
+           ORDER BY name""",
+        (month.isoformat(), following.isoformat()),
+    ).fetchall()
     shift_types = active_shift_types()
     entries_by_day: dict[str, list[dict]] = {}
     for row in shifts:
@@ -91,6 +101,7 @@ def shifts_page():
         calendar_entries=entries_by_day,
         shifts=[row for row in shifts if row["start_time"][:10] == selected.isoformat()],
         export_shifts=[dict(row) for row in shifts],
+        export_employees=[dict(row) for row in export_employees],
         employees=employees,
         shift_types=shift_types,
         shift_type_options=[dict(row) for row in shift_types],
@@ -98,6 +109,7 @@ def shifts_page():
 
 
 @bp.route("/shifts/settings")
+@admin_required
 def shift_settings_page():
     db = get_db()
     employees = db.execute(
@@ -112,6 +124,7 @@ def shift_settings_page():
 
 
 @bp.route("/shifts/types/add", methods=["POST"])
+@admin_required
 def add_shift_type():
     name = request.form.get("name", "").strip()
     start = request.form.get("start_time", "")
@@ -151,6 +164,7 @@ def add_shift_type():
 
 
 @bp.route("/shifts/types/<int:shift_type_id>/update", methods=["POST"])
+@admin_required
 def update_shift_type(shift_type_id: int):
     name = request.form.get("name", "").strip()
     start = request.form.get("start_time", "")
@@ -182,6 +196,7 @@ def update_shift_type(shift_type_id: int):
 
 
 @bp.route("/shifts/types/<int:shift_type_id>/delete", methods=["POST"])
+@admin_required
 def delete_shift_type(shift_type_id: int):
     db = get_db()
     row = db.execute(
@@ -197,6 +212,7 @@ def delete_shift_type(shift_type_id: int):
 
 
 @bp.route("/shifts/types/<int:shift_type_id>/move", methods=["POST"])
+@admin_required
 def move_shift_type(shift_type_id: int):
     direction = request.form.get("direction")
     if direction not in {"up", "down"}:
@@ -229,6 +245,7 @@ def move_shift_type(shift_type_id: int):
 
 
 @bp.route("/shifts/employees/add", methods=["POST"])
+@admin_required
 def add_employee():
     name = request.form.get("name", "").strip()
     try:
@@ -258,6 +275,7 @@ def add_employee():
 
 
 @bp.route("/shifts/employees/<int:employee_id>/color", methods=["POST"])
+@admin_required
 def update_employee_color(employee_id: int):
     try:
         color = employee_color(request.form.get("color", ""))
@@ -279,6 +297,7 @@ def update_employee_color(employee_id: int):
 
 
 @bp.route("/shifts/employees/<int:employee_id>/delete", methods=["POST"])
+@admin_required
 def delete_employee(employee_id: int):
     db = get_db()
     employee = db.execute(
@@ -302,9 +321,8 @@ def save_shift(shift_id: int | None = None):
     except sqlite3.OperationalError:
         flash("班表目前忙碌，請稍後重試。", "error")
         return schedule_redirect("shifts.shifts_page")
-    if shift_id is not None and not db.execute(
-        "SELECT id FROM shifts WHERE id = ?", (shift_id,)
-    ).fetchone():
+    original = db.execute("SELECT * FROM shifts WHERE id = ?", (shift_id,)).fetchone() if shift_id is not None else None
+    if shift_id is not None and not original:
         db.rollback()
         flash("找不到班次。", "error")
         return schedule_redirect("shifts.shifts_page")
@@ -312,20 +330,28 @@ def save_shift(shift_id: int | None = None):
     try:
         employee_id = int(request.form["employee_id"])
         employee = db.execute(
-            "SELECT id, name FROM employees WHERE id = ? AND is_active = 1", (employee_id,)
+            "SELECT id, name, is_active FROM employees WHERE id = ?", (employee_id,)
         ).fetchone()
-        if not employee:
+        if not employee or (not employee['is_active'] and (not original or original['employee_id'] != employee_id)):
             raise ValueError("請選擇有效員工。")
         shift_type_id = int(request.form["shift_type_id"])
         shift_type = db.execute(
-            """SELECT id, name, ends_next_day FROM shift_types
-               WHERE id = ? AND is_active = 1""",
+            """SELECT id, name, ends_next_day, is_active FROM shift_types
+               WHERE id = ?""",
             (shift_type_id,),
         ).fetchone()
-        if not shift_type:
+        if not shift_type or (not shift_type['is_active'] and (not original or original['shift_type_id'] != shift_type_id)):
             raise ValueError("請選擇有效班別。")
+        if request.form.get("has_ends_next_day_control") == "1":
+            ends_next_day = request.form.get("ends_next_day") == "1"
+        else:
+            # Keep older clients compatible; the current form always sends the control marker.
+            ends_next_day = bool(shift_type["ends_next_day"])
+        validate_time_range(
+            request.form["start_time"], request.form["end_time"], ends_next_day
+        )
         raw_dates = [request.form["date"]] if shift_id is not None else request.form.getlist("dates")
-        selected_dates = sorted({date.fromisoformat(value) for value in raw_dates})
+        selected_dates = sorted({supported_date(value) for value in raw_dates})
         if not selected_dates or len(selected_dates) > 31:
             raise ValueError("請選擇 1 到 31 個排班日期。")
         note = request.form.get("note", "").strip()
@@ -333,8 +359,9 @@ def save_shift(shift_id: int | None = None):
         for day in selected_dates:
             start = parse_shift_time(day, "start_time")
             end = parse_shift_time(day, "end_time")
-            if shift_type["ends_next_day"]:
+            if ends_next_day:
                 end += timedelta(days=1)
+            supported_date(end.date().isoformat())
             duration = end - start
             if duration <= timedelta(0) or duration >= timedelta(hours=24):
                 raise ValueError("班次時間必須大於 0 且少於 24 小時。")

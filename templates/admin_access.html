@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="admin-access-shell">
+  <article class="panel admin-access-card">
+    <p class="section-kicker">ADMIN ACCESS</p>
+    <h1>{{ '建立管理員密碼' if setup_mode else '管理員登入' }}</h1>
+    <p class="muted">
+      {% if setup_mode %}
+      第一次使用請建立管理員密碼。系統只保存加密後的密碼資料。
+      {% else %}
+      整體設定包含費率、備份與資料清除，請輸入管理員密碼後繼續。
+      {% endif %}
+    </p>
+    <form class="admin-access-form" method="post">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <label>管理員密碼
+        <input type="password" name="password" minlength="8" autocomplete="{{ 'new-password' if setup_mode else 'current-password' }}" required autofocus>
+      </label>
+      {% if setup_mode %}
+      <label>再次輸入密碼
+        <input type="password" name="password_confirmation" minlength="8" autocomplete="new-password" required>
+      </label>
+      {% endif %}
+      <button type="submit">{{ '建立密碼並進入設定' if setup_mode else '登入整體設定' }}</button>
+    </form>
+    <a class="admin-back-link" href="{{ url_for('tables.dashboard') }}">返回球檯總覽</a>
+  </article>
+</section>
+{% endblock %}

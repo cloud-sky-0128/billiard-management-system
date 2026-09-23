@@ -4,9 +4,13 @@
   <div class="panel-head">
     <div>
       <h1>收支管理</h1>
-      <p class="muted">系統營收用於核對，月結以收支淨額為準</p>
+      <p class="muted">每天早上 06:00 切換營業日；06:00 前的凌晨結帳歸入前一個營業日</p>
     </div>
-    <a class="btn-link" href="{{ url_for('finance.export_finance', month=month.strftime('%Y-%m')) }}">下載月報 CSV</a>
+    <div class="action-row finance-export-actions">
+      <button type="button" class="btn-link" data-dialog-open="monthly-report-dialog">當月報表</button>
+      <a class="btn-link" href="{{ url_for('finance.export_finance', month=month.strftime('%Y-%m')) }}">下載月報 CSV</a>
+      <a class="btn-link" href="{{ url_for('finance.export_expenses', month=month.strftime('%Y-%m')) }}">下載支出明細 CSV</a>
+    </div>
   </div>
   <form class="inline-form" method="get" action="{{ url_for('finance.finance_page') }}">
     <label>月份 <input type="month" name="month" value="{{ month.strftime('%Y-%m') }}" required></label>
@@ -25,12 +29,32 @@
 <section class="finance-warning">有 {{ missing_actual_days }} 天存在系統營收或支出，但尚未填寫實際實收，月結數字可能不完整。</section>
 {% endif %}
 
+<section class="panel business-day-settlement">
+  <div class="panel-head">
+    <div>
+      <h2>{{ selected_date }} 營業日結算</h2>
+    </div>
+    <form class="inline-form settlement-date-picker" method="get" action="{{ url_for('finance.finance_page') }}">
+      <input type="hidden" name="month" value="{{ month.strftime('%Y-%m') }}">
+      <label for="settlement-date">查看營業日</label>
+      <input id="settlement-date" type="date" name="date" value="{{ selected_date }}" min="{{ rows[0].date }}" max="{{ rows[-1].date }}" required>
+      <button type="submit">查看</button>
+    </form>
+  </div>
+  <div class="settlement-values">
+    <span><small>系統營收</small><strong>{{ selected_row.system_revenue_cents|money }}</strong></span>
+    <span><small>實際實收</small><strong>{% if selected_row.actual_revenue_cents is not none %}{{ selected_row.actual_revenue_cents|money }}{% else %}未填{% endif %}</strong></span>
+    <span><small>支出</small><strong>{{ selected_row.expense_total_cents|money }}</strong></span>
+    <span><small>收支淨額</small><strong>{% if selected_row.net_cents is not none %}{{ selected_row.net_cents|money }}{% else %}未完成{% endif %}</strong></span>
+  </div>
+</section>
+
 <section class="two-col">
   <article class="panel">
     <h2>登記每日實收</h2>
     <form class="schedule-form" method="post" action="{{ url_for('finance.save_actual_revenue') }}">
-      <label>日期 <input type="date" name="record_date" value="{{ selected_date }}" required></label>
-      <label>實際實收 <input type="number" name="actual_revenue" min="0" step="0.01" value="{{ selected_row.actual_revenue_cents|money if selected_row.actual_revenue_cents is not none else '' }}" required></label>
+      <label>營業日 <input type="date" name="record_date" value="{{ selected_date }}" required></label>
+      <label>實際實收 <input type="number" name="actual_revenue" min="0" step="1" value="{{ selected_row.actual_revenue_cents|money if selected_row.actual_revenue_cents is not none else '' }}" required></label>
       <label class="schedule-full">備註 <input name="note" maxlength="500" value="{{ selected_row.cash_note }}" placeholder="例如：現金短少、補收款"></label>
       <button type="submit">儲存實收</button>
     </form>
@@ -39,45 +63,71 @@
   <article class="panel">
     <h2>新增支出</h2>
     <form class="schedule-form" method="post" action="{{ url_for('finance.add_expense') }}">
-      <label>日期 <input type="date" name="expense_date" value="{{ selected_date }}" required></label>
+      <label>營業日 <input type="date" name="expense_date" value="{{ selected_date }}" required></label>
       <label>分類
         <select name="category">{% for category in expense_categories %}<option value="{{ category }}">{{ category }}</option>{% endfor %}</select>
       </label>
-      <label>金額 <input type="number" name="amount" min="0.01" step="0.01" required></label>
+      <label>金額 <input type="number" name="amount" min="1" step="1" required></label>
       <label>備註 <input name="description" maxlength="500" placeholder="例如：飲料進貨、九月薪資"></label>
       <button type="submit">新增支出</button>
     </form>
   </article>
 </section>
 
-<section class="panel">
-  <h2>{{ month.strftime('%Y 年 %m 月') }} 月報</h2>
-  <div class="table-scroll">
-    <table class="finance-table">
-      <thead><tr><th>日期</th><th>系統營收</th><th>實際實收</th><th>支出</th><th>支出明細／備註</th><th>收支淨額</th></tr></thead>
-      <tbody>
-        {% for row in rows %}
-        <tr class="{% if row.date == selected_date %}is-selected-row{% endif %}">
-          <td><a href="{{ url_for('finance.finance_page', month=month.strftime('%Y-%m'), date=row.date) }}">{{ row.date }}</a></td>
-          <td>{{ row.system_revenue_cents|money }}</td>
-          <td>{% if row.actual_revenue_cents is not none %}{{ row.actual_revenue_cents|money }}{% else %}<span class="muted">未填</span>{% endif %}</td>
-          <td>{{ row.expense_total_cents|money }}</td>
-          <td>
-            {% for expense in row.expenses %}
-              <div class="expense-entry">
-                <span>{{ expense.category }}：{{ expense.description or '無備註' }}（{{ expense.amount_cents|money }}）</span>
-                <form method="post" action="{{ url_for('finance.delete_expense', expense_id=expense.id) }}" onsubmit="return confirm('刪除這筆支出？');">
-                  <button type="submit" class="chip-delete" aria-label="刪除支出">×</button>
-                </form>
-              </div>
-            {% else %}<span class="muted">－</span>{% endfor %}
-          </td>
-          <td>{% if row.net_cents is not none %}{{ row.net_cents|money }}{% else %}<span class="muted">未完成</span>{% endif %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-      <tfoot><tr><th>月總計</th><th>{{ system_total_cents|money }}</th><th>{{ actual_total_cents|money }}</th><th>{{ expense_total_cents|money }}</th><th></th><th>{{ net_total_cents|money }}</th></tr></tfoot>
-    </table>
+<dialog class="settings-dialog finance-report-dialog" id="monthly-report-dialog" aria-labelledby="monthly-report-title">
+  <div class="settings-dialog-frame">
+    <header class="settings-dialog-header">
+      <div>
+        <span>收支管理</span>
+        <h2 id="monthly-report-title">{{ month.strftime('%Y 年 %m 月') }} 月報</h2>
+      </div>
+      <button type="button" class="settings-dialog-close" data-dialog-close aria-label="關閉月報視窗">×</button>
+    </header>
+    <div class="settings-dialog-scroll">
+      <section class="panel">
+        <div class="table-scroll">
+          <table class="finance-table">
+            <thead><tr><th>營業日</th><th>系統營收</th><th>實際實收</th><th>支出</th><th>支出明細／備註</th><th>收支淨額</th></tr></thead>
+            <tbody>
+              {% for row in rows %}
+              <tr class="{% if row.date == selected_date %}is-selected-row{% endif %}">
+                <td><a href="{{ url_for('finance.finance_page', month=month.strftime('%Y-%m'), date=row.date) }}">{{ row.date }}</a></td>
+                <td>{{ row.system_revenue_cents|money }}</td>
+                <td>{% if row.actual_revenue_cents is not none %}{{ row.actual_revenue_cents|money }}{% else %}<span class="muted">未填</span>{% endif %}</td>
+                <td>{{ row.expense_total_cents|money }}</td>
+                <td>
+                  {% for expense in row.expenses %}
+                    <div class="expense-entry">
+                      <span>{{ expense.category }}：{{ expense.description or '無備註' }}（{{ expense.amount_cents|money }}）</span>
+                      <form method="post" action="{{ url_for('finance.delete_expense', expense_id=expense.id) }}" onsubmit="return confirm('刪除這筆支出？');">
+                        <button type="submit" class="chip-delete" aria-label="刪除支出">×</button>
+                      </form>
+                    </div>
+                  {% else %}<span class="muted">－</span>{% endfor %}
+                </td>
+                <td>{% if row.net_cents is not none %}{{ row.net_cents|money }}{% else %}<span class="muted">未完成</span>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot><tr><th>月總計</th><th>{{ system_total_cents|money }}</th><th>{{ actual_total_cents|money }}</th><th>{{ expense_total_cents|money }}</th><th></th><th>{{ net_total_cents|money }}</th></tr></tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
   </div>
-</section>
+</dialog>
+
+<script>
+(function () {
+  const openButton = document.querySelector('[data-dialog-open="monthly-report-dialog"]');
+  const dialog = document.getElementById("monthly-report-dialog");
+  const closeButton = dialog?.querySelector("[data-dialog-close]");
+  if (!openButton || !dialog) return;
+  openButton.addEventListener("click", () => {
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+  });
+  if (closeButton) closeButton.addEventListener("click", () => dialog.close());
+})();
+</script>
 {% endblock %}

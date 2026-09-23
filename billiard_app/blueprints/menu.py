@@ -1,9 +1,17 @@
 ﻿from flask import Blueprint, flash, redirect, render_template, request, url_for
 
+from ..auth import admin_is_authenticated, admin_login_redirect, admin_password_hash
 from ..db import get_db
 from ..money import to_cents
 
 bp = Blueprint("menu", __name__)
+
+
+@bp.before_request
+def require_admin_access():
+    if not admin_password_hash() or not admin_is_authenticated():
+        return admin_login_redirect()
+    return None
 
 @bp.route("/menu")
 def menu_page():

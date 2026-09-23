@@ -1,0 +1,222 @@
+<article class="panel order-launch-panel">
+  <div>
+    <h3>點餐</h3>
+  </div>
+  {% if menu_catalog %}
+  <button class="order-open-button js-order-open" type="button">開啟點餐</button>
+  {% else %}
+  <span class="muted">目前沒有可點品項。</span>
+  {% endif %}
+</article>
+
+{% if menu_catalog %}
+<dialog
+  class="order-kiosk js-order-kiosk"
+  data-default-category="{{ selected_category_id or menu_catalog[0].id }}"
+  data-auto-open="{{ 'true' if request.args.get('order') == '1' else 'false' }}"
+  aria-labelledby="order-kiosk-title"
+>
+  <div class="order-kiosk-shell">
+    <header class="order-kiosk-header">
+      <div>
+        <p class="order-kiosk-eyebrow">快速點餐</p>
+        <h3 id="order-kiosk-title">選擇餐飲品項</h3>
+      </div>
+      <button class="order-close-button js-order-close" type="button" aria-label="關閉點餐視窗">關閉</button>
+    </header>
+
+    <nav class="order-category-tabs" aria-label="餐飲分類">
+      {% for category in menu_catalog %}
+      <button
+        class="order-category-button js-order-category{% if category['id'] == selected_category_id %} is-active{% endif %}"
+        type="button"
+        data-category-id="{{ category['id'] }}"
+      >{{ category['name'] }}</button>
+      {% endfor %}
+    </nav>
+
+    <div class="order-kiosk-body">
+      {% for category in menu_catalog %}
+      <section
+        class="order-category-panel js-order-category-panel"
+        data-category-panel="{{ category['id'] }}"
+        {% if category['id'] != selected_category_id %}hidden{% endif %}
+      >
+        <div class="order-section-heading">
+          <h4>{{ category['name'] }}品項</h4>
+          <span>{{ category['items']|length }} 項</span>
+        </div>
+        {% if category['items'] %}
+        <div class="menu-item-grid">
+          {% for item in category['items'] %}
+          <button
+            class="menu-item-tile js-menu-item"
+            type="button"
+            data-item-id="{{ item['id'] }}"
+            data-item-name="{{ item['name'] }}"
+            data-item-price="{{ item['price_cents']|money }}"
+            data-category-id="{{ category['id'] }}"
+            data-item-is-drink="{{ 'true' if category['is_drink'] else 'false' }}"
+          >
+            <strong>{{ item['name'] }}</strong>
+            <span>{{ item['price_cents']|money }} 元</span>
+          </button>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">此分類目前沒有可點品項。</p>
+        {% endif %}
+      </section>
+      {% endfor %}
+    </div>
+
+    <form class="order-customization js-order-form" method="post" action="{{ url_for('tables.add_order') }}">
+      {% if tab %}
+      <input type="hidden" name="customer_tab_id" value="{{ tab.id }}">
+      {% else %}
+      <input type="hidden" name="table_no" value="{{ table_no }}">
+      {% endif %}
+      <input class="js-order-item-id" type="hidden" name="item_id" value="">
+      <input class="js-order-category-id" type="hidden" name="category_id" value="{{ selected_category_id or '' }}">
+      <input type="hidden" name="continue_ordering" value="1">
+
+      <p class="order-selection-placeholder js-order-placeholder">請先點選上方品項</p>
+      <div class="order-selection-content js-order-selection" hidden>
+        <div class="order-selection-top">
+          <div>
+            <span class="muted">已選品項</span>
+            <h4><span class="js-order-item-name"></span> · <span class="js-order-item-price"></span> 元</h4>
+          </div>
+          <div class="quantity-picker">
+            <span>數量</span>
+            <button class="js-quantity-minus" type="button" aria-label="減少數量">−</button>
+            <input class="js-order-quantity" type="number" name="quantity" min="1" max="99" value="1" required>
+            <button class="js-quantity-plus" type="button" aria-label="增加數量">＋</button>
+          </div>
+        </div>
+
+        <div class="drink-customization js-drink-customization" hidden>
+          <fieldset>
+            <legend>甜度</legend>
+            <div class="order-choice-grid">
+              {% for sugar in sugar_options %}
+              <label class="order-choice">
+                <input type="radio" name="sugar_level" value="{{ sugar }}" disabled>
+                <span>{{ sugar }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>溫度／冰塊</legend>
+            <div class="order-choice-grid">
+              {% for ice in ice_options %}
+              <label class="order-choice">
+                <input type="radio" name="ice_level" value="{{ ice }}" disabled>
+                <span>{{ ice }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+        </div>
+
+        <button class="order-add-button" type="submit">加入訂單</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  const dialog = document.querySelector(".js-order-kiosk");
+  const openButton = document.querySelector(".js-order-open");
+  if (!dialog || !openButton) return;
+
+  const categoryButtons = dialog.querySelectorAll(".js-order-category");
+  const categoryPanels = dialog.querySelectorAll(".js-order-category-panel");
+  const itemButtons = dialog.querySelectorAll(".js-menu-item");
+  const itemIdInput = dialog.querySelector(".js-order-item-id");
+  const categoryIdInput = dialog.querySelector(".js-order-category-id");
+  const placeholder = dialog.querySelector(".js-order-placeholder");
+  const selection = dialog.querySelector(".js-order-selection");
+  const itemName = dialog.querySelector(".js-order-item-name");
+  const itemPrice = dialog.querySelector(".js-order-item-price");
+  const quantityInput = dialog.querySelector(".js-order-quantity");
+  const drinkOptions = dialog.querySelector(".js-drink-customization");
+  const sugarInputs = dialog.querySelectorAll('input[name="sugar_level"]');
+  const iceInputs = dialog.querySelectorAll('input[name="ice_level"]');
+
+  function clearSelection() {
+    itemButtons.forEach((button) => button.classList.remove("is-selected"));
+    itemIdInput.value = "";
+    quantityInput.value = "1";
+    placeholder.hidden = false;
+    selection.hidden = true;
+    drinkOptions.hidden = true;
+    [...sugarInputs, ...iceInputs].forEach((input) => {
+      input.checked = false;
+      input.disabled = true;
+      input.required = false;
+    });
+  }
+
+  function showCategory(categoryId) {
+    categoryButtons.forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.categoryId === categoryId);
+    });
+    categoryPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.categoryPanel !== categoryId;
+    });
+    categoryIdInput.value = categoryId;
+    clearSelection();
+  }
+
+  function openDialog() {
+    showCategory(dialog.dataset.defaultCategory || categoryButtons[0].dataset.categoryId);
+    if (!dialog.open) dialog.showModal();
+  }
+
+  openButton.addEventListener("click", openDialog);
+  dialog.querySelector(".js-order-close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+
+  categoryButtons.forEach((button) => {
+    button.addEventListener("click", () => showCategory(button.dataset.categoryId));
+  });
+
+  itemButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      itemButtons.forEach((itemButton) => itemButton.classList.remove("is-selected"));
+      button.classList.add("is-selected");
+      itemIdInput.value = button.dataset.itemId;
+      categoryIdInput.value = button.dataset.categoryId;
+      itemName.textContent = button.dataset.itemName;
+      itemPrice.textContent = button.dataset.itemPrice;
+      quantityInput.value = "1";
+      placeholder.hidden = true;
+      selection.hidden = false;
+
+      const isDrink = button.dataset.itemIsDrink === "true";
+      drinkOptions.hidden = !isDrink;
+      [...sugarInputs, ...iceInputs].forEach((input) => {
+        input.checked = false;
+        input.disabled = !isDrink;
+        input.required = isDrink;
+      });
+      selection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  });
+
+  dialog.querySelector(".js-quantity-minus").addEventListener("click", () => {
+    quantityInput.value = String(Math.max(1, Number(quantityInput.value || 1) - 1));
+  });
+  dialog.querySelector(".js-quantity-plus").addEventListener("click", () => {
+    quantityInput.value = String(Math.min(99, Number(quantityInput.value || 1) + 1));
+  });
+
+  if (dialog.dataset.autoOpen === "true") openDialog();
+})();
+</script>
+{% endif %}

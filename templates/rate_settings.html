@@ -17,11 +17,12 @@
     </div>
     <div class="table-scroll">
       <table class="rate-table">
-        <thead><tr><th>球檯</th><th>計時（元／分鐘）</th><th>包台（元／小時）</th><th>允許包台</th></tr></thead>
+        <thead><tr><th>球檯</th><th>顯示名稱</th><th>計時（元／分鐘）</th><th>包台（元／小時）</th><th>允許包台</th></tr></thead>
         <tbody>
           {% for rate in table_rates %}
           <tr>
             <td><strong>{{ rate.table_no }} 號桌</strong></td>
+            <td><input type="text" name="display_name_{{ rate.table_no }}" value="{{ rate.display_name or (rate.table_no ~ ' 號桌') }}" maxlength="40" aria-label="{{ rate.table_no }} 號桌顯示名稱"></td>
             <td><input type="number" name="timed_rate_{{ rate.table_no }}" step="0.01" min="0.01" value="{{ rate.timed_rate_per_min_cents|money }}" required></td>
             <td><input type="number" name="package_rate_{{ rate.table_no }}" step="0.01" min="0.01" value="{{ rate.package_rate_per_hour_cents|money }}" required></td>
             <td>
