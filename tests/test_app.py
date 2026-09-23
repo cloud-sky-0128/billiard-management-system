@@ -490,7 +490,7 @@ assert 'Database startup check failed' in log_path(database).read_text(encoding=
             patch.object(sys, "frozen", True, create=True),
             patch.object(sys, "executable", str(root / "portable" / "BilliardManager.exe")),
         ):
-            self.assertEqual(default_database_path(), fallback)
+            self.assertEqual(default_database_path().resolve(), fallback.resolve())
             original_stat = Path.stat
             def deny_primary(path, *args, **kwargs):
                 if path == primary:
