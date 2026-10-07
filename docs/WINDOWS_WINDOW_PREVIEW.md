@@ -12,7 +12,7 @@
 
 1. 完整解壓縮 ZIP，不要直接在壓縮檔內執行。
 2. 進入 BilliardManagerWindow 資料夾，雙擊 BilliardManagerWindow.exe。
-3. 介面會在獨立視窗顯示；關閉視窗會停止本機服務和備份排程。
+3. 介面會在獨立視窗顯示，不必另外開啟瀏覽器或手動輸入網址；關閉視窗會停止本機服務和備份排程。
 4. 如視窗顯示缺少 WebView2，請安裝 Microsoft WebView2 Runtime 後重試。
 
 視窗版使用 Windows WebView2，不會自動改用較舊的 IE 核心。WebView2 Runtime

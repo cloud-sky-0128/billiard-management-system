@@ -14,7 +14,7 @@
 | **獨立視窗預覽版 `window-preview-0.1.2`** | [預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.2) 下載 `BilliardManagerWindow-preview.zip` | `BilliardManagerWindow.exe` | 在獨立視窗操作；需安裝 WebView2 Runtime，先以備份資料試用。 |
 | **原始碼開發版（`main`）** | Clone 本倉庫並安裝 `requirements.txt` | `python app.py` | 在本機瀏覽器操作 `http://127.0.0.1:5000`；需 Python，不是 Windows 免安裝版。 |
 
-前兩種 Windows 版都只在這台電腦的 `127.0.0.1:8765` 啟動本機服務，不必連線到網際網路；兩者不能同時執行。一般 `git push` 只更新原始碼，不會更新 Release ZIP。
+前兩種 Windows 版都只在這台電腦的 `127.0.0.1:8765` 啟動本機服務，不必連線到網際網路；兩者不能同時執行。瀏覽器版會自動開啟該網址；獨立視窗版會直接顯示操作介面，使用者不必另外開瀏覽器或手動輸入網址。一般 `git push` 只更新原始碼，不會更新 Release ZIP。
 
 對外提供 ZIP 前，請依 [Windows 下載版發布驗收清單](docs/DOWNLOAD_RELEASE_CHECKLIST.md) 用非營業資料及乾淨電腦逐項確認；不需要上架 Microsoft Store。
 
@@ -35,16 +35,18 @@ Get-FileHash -Algorithm SHA256 .\BilliardManager-windows-x64.zip
 
 若 Windows 顯示 SmartScreen 警告，先確認下載來源與 SHA-256；不要執行來源不明或驗證結果不符的檔案。更多本機版說明見 [ZIP 內的 README 來源](docs/WINDOWS_PORTABLE.md)。
 
-### 建置獨立視窗預覽版
+### 啟動或建置獨立視窗預覽版
 
-在 Windows 安裝 Python 後，於專案目錄執行：
+一般使用者從 [視窗預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.2) 下載 `BilliardManagerWindow-preview.zip`，完整解壓後執行 `BilliardManagerWindow.exe`。程式會直接開啟獨立操作視窗，不需要手動開啟 `http://127.0.0.1:8765`。**不可把瀏覽器版 ZIP 誤認為視窗版**。
+
+只有需要自行從原始碼建置時，才要在 Windows 安裝 Python 並於專案目錄執行：
 
 ```powershell
 python -m pip install -r requirements-window.txt
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_windows_window.ps1
 ```
 
-可直接從 [視窗預覽版 Release](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.2) 下載，或自行建置。完成後解壓 `BilliardManagerWindow-preview.zip`，執行其中的 `BilliardManagerWindow.exe`。**不可把瀏覽器版 ZIP 誤認為視窗版**。使用前請先看 [視窗預覽版說明](docs/WINDOWS_WINDOW_PREVIEW.md)，尤其是 WebView2 Runtime、共用資料庫及 EXE 旁 `data` 的注意事項。
+使用前請先看 [視窗預覽版說明](docs/WINDOWS_WINDOW_PREVIEW.md)，尤其是 WebView2 Runtime、共用資料庫及 EXE 旁 `data` 的注意事項。
 
 本次更新讓獨立視窗版可下載班表 PNG 與收支 CSV，並修正已過期預約仍阻擋縮減球檯數的問題。歷史預約會保留原桌號，不會因縮桌而刪除或改桌。
 
@@ -110,8 +112,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_windows_wind
 
 ## 常見問題
 
-- **瀏覽器沒有自動開啟：** 手動輸入 `http://127.0.0.1:8765`。原始碼開發版才使用 `http://127.0.0.1:5000`。
-- **無法連線：** 確認 `BilliardManager.exe` 視窗仍在執行，並確認網址的連接埠是 `8765`。
+- **瀏覽器版沒有自動開啟：** 確認 `BilliardManager.exe` 的黑色程式視窗仍在執行，再手動輸入 `http://127.0.0.1:8765`。原始碼開發版才使用 `http://127.0.0.1:5000`。
+- **獨立視窗版需要開網址嗎：** 不需要。執行 `BilliardManagerWindow.exe` 後直接在程式視窗操作；`127.0.0.1:8765` 只是內部本機服務。
+- **網址無法連線：** 這只適用於瀏覽器版；確認 `BilliardManager.exe` 的黑色程式視窗仍在執行，並確認連接埠是 `8765`。
 - **啟動或備份失敗：** 查看資料庫旁的 `logs\app.log`，確認磁碟尚有空間、外接備份磁碟仍可使用。
 - **資料看似消失：** 先停止操作並確認目前使用的資料庫路徑；不要建立新資料庫或覆蓋舊檔。
 
@@ -147,7 +150,7 @@ macOS / Linux：
 python -m unittest discover -s tests -v
 ```
 
-目前有**超過 100 項自動化測試**；測試使用暫存 SQLite，不會修改正式資料庫。[瀏覽器版建置腳本](scripts/build_windows.ps1) 與 [視窗預覽版建置腳本](scripts/build_windows_window.ps1) 分開執行。現有 `v*` 標籤的 GitHub Actions 只會打包並發布**瀏覽器版**；`window-preview-0.1.0` 則是單獨發布的視窗預覽版，不會觸發該瀏覽器版建置流程。
+目前有**超過 100 項自動化測試**；測試使用暫存 SQLite，不會修改正式資料庫。[瀏覽器版建置腳本](scripts/build_windows.ps1) 與 [視窗預覽版建置腳本](scripts/build_windows_window.ps1) 分開執行。`v*` 標籤會打包並發布**瀏覽器版**；`window-preview-*` 標籤會由另一個工作流程單獨發布**獨立視窗預覽版**。
 
 ## 已知限制
 
