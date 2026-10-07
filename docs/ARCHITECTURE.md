@@ -286,7 +286,7 @@ sequenceDiagram
 | Server-side snapshots | 保存交易當下資料，避免設定變更破壞歷史帳務 |
 | Integer cents + Decimal | 金額以整數分保存，避免 SQLite `REAL` 與 Python `float` 的精度誤差 |
 
-## 面試可說明的技術亮點
+## 工程設計重點
 
 1. **資料一致性：** 重複開台使用 partial unique index；預約與排班用 immediate transaction 將查核及寫入原子化，阻止競態條件。
 2. **歷史資料設計：** 訂單保存 `item_name`、`item_category_name`、`unit_price_cents`，session 保存費率與折扣快照。
