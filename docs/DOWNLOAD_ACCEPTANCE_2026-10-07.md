@@ -1,21 +1,28 @@
 # Windows 下載版驗收報告（2026-10-07）
 
-本次依 [發布驗收清單](DOWNLOAD_RELEASE_CHECKLIST.md) 檢查使用者實際下載的版本。結果不等於全部簽收：已完成的軟體測試通過多數項目，但視窗版下載設定、過期預約與發行說明仍有問題；乾淨電腦、缺少 WebView2、另一顆實體磁碟的測試仍須補做。
+本次依 [發布驗收清單](DOWNLOAD_RELEASE_CHECKLIST.md) 檢查使用者實際下載的版本。本文件先保留 `v0.1.4-desktop`／`window-preview-0.1.1` 的原始驗收結果，再記錄修正後 `v0.1.5-desktop`／`window-preview-0.1.2` 的發布複驗。乾淨電腦、缺少 WebView2、另一顆實體磁碟的測試仍須補做，因此目前不等於全部簽收。
 
-36 項必要條件的結果為：**23 項通過、9 項部分通過、2 項待測、2 項未通過**。未通過項目是 Release 說明與視窗版下載要求；過期預約阻擋縮桌則是本次額外重現的邏輯問題。完整逐項結果如下。
+舊版 36 項必要條件的結果為：**23 項通過、9 項部分通過、2 項待測、2 項未通過**。未通過項目是 Release 說明與視窗版下載要求；過期預約阻擋縮桌則是本次額外重現的邏輯問題。這些問題已在新版修正，舊版完整逐項結果仍保留於下方，供追溯使用。
 
 ## 本機修正後驗證
 
-下列兩項已在尚未發布的本機原始碼修正：
+下列兩項已在提交 `6eae1d4981efcc8e70f7bc9a3233c63248d51b7d` 修正並發布：
 
 - 視窗版會在建立 WebView2 視窗前啟用 pywebview 檔案下載，讓班表 PNG 與收支 CSV 的下載事件不再被視窗直接取消。
 - 縮減球檯數時只阻擋尚未結束的有效預約。未填結束時間以開始後一小時計算；剛好到期、已取消、已完成及已過期的預約不再阻擋。歷史預約仍保留原桌號並標示「已停用」，可以修改歷史文字，但不能新增或延長為未來的停用桌預約。
 
 修正後以 Python 3.13.13 執行 `python -m unittest discover -s tests -v`，共 115 項測試，66.268 秒，全部通過。測試包含下載設定時機、明確結束時間、未填結束時間、剛好到期、跨午夜、取消／完成狀態，以及停用桌號的歷史資料保留與未來預約拒絕。
 
-本機另建立待發布的 `v0.1.5-desktop` 與 `window-preview-0.1.2` ZIP，CRC 可讀且未包含資料庫、備份、日誌或密鑰。視窗版使用隔離資料庫啟動，實際經過原生「另存新檔」視窗儲存班表 PNG 與月報 CSV：PNG 為 2800×2368、207,353 bytes 且格式驗證正常；CSV 為 UTF-8 BOM、34 行，中文表頭及內容可讀。測試檔與資料庫均留在 Git 忽略的 `build/release-smoke-20261007/`，沒有使用正式營運資料。
+本機先建立 `v0.1.5-desktop` 與 `window-preview-0.1.2` 候選 ZIP，CRC 可讀且未包含資料庫、備份、日誌或密鑰。視窗版使用隔離資料庫啟動，實際經過原生「另存新檔」視窗儲存班表 PNG 與月報 CSV：PNG 為 2800×2368、207,353 bytes 且格式驗證正常；CSV 為 UTF-8 BOM、34 行，中文表頭及內容可讀。測試檔與資料庫均留在 Git 忽略的 `build/release-smoke-20261007/`，沒有使用正式營運資料。
 
-這不會改變下方舊版已發布 ZIP 的原始驗收統計。新版發布後仍應從 GitHub 重新下載附件並核對 SHA-256，確定 CI 產物與本機驗收版本一致。
+新版已由 GitHub Actions 從同一提交建置並發布。重新下載正式附件後，ZIP 可完整解壓、內附 README 版本正確，且未包含資料庫、備份、日誌、`.env` 或密鑰：
+
+- [v0.1.5-desktop](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/v0.1.5-desktop)：`BilliardManager-windows-x64.zip` SHA-256 為 `842169ab6e3876080d830268be08ac4593cd1e775b30850a93206392de5630bc`。
+- [window-preview-0.1.2](https://github.com/cloud-sky-0128/billiard-management-system/releases/tag/window-preview-0.1.2)：`BilliardManagerWindow-preview.zip` SHA-256 為 `0ffc7858b854d950043141a8bd69b2e3faff00703b0faf9dbb4eb8d5ebd69536`。
+- 兩個雜湊皆同時符合下載後本機計算值、Release 內的 `SHA256SUMS.txt` 與 GitHub 資產摘要。
+- 原始碼 115 項測試與兩個 Windows 打包工作流程皆通過。
+
+下方表格仍是舊版第一次驗收時的原始紀錄，不回填改寫，以免失去問題發現與修正的歷程。
 
 ## 驗收對象與環境
 
@@ -39,7 +46,7 @@
 
 升級使用真正下載的 `v0.1.2-desktop` 建立 1 筆預約、1 筆班次及 150 元已結帳紀錄，再以最新版 EXE 啟動同一份測試資料庫。遷移前備份存在，預約、班表及結帳資料完整，實際統計及收支頁均顯示 150 元，舊預約完成端點回傳 200。舊版沒有獨立付款表，新表的 0 筆資料不能直接解讀為營收遺失；本次曾因驗收腳本只比較付款表而誤判，已以頁面與相容查詢確認，**不列為程式漏洞**。
 
-## 已重現的問題
+## 舊版已重現的問題
 
 ### 1. 視窗版未啟用檔案下載
 
@@ -106,15 +113,17 @@
 
 ## CI 證據
 
+- [新版 main 測試成功](https://github.com/cloud-sky-0128/billiard-management-system/actions/runs/37575753283)
+- [v0.1.5 瀏覽器版打包成功](https://github.com/cloud-sky-0128/billiard-management-system/actions/runs/37575755428)
+- [window-preview-0.1.2 視窗版打包成功](https://github.com/cloud-sky-0128/billiard-management-system/actions/runs/37575755507)
 - [main 測試成功](https://github.com/cloud-sky-0128/billiard-management-system/actions/runs/35870337444)
 - [v0.1.4 瀏覽器版打包成功](https://github.com/cloud-sky-0128/billiard-management-system/actions/runs/35870443384)
 - [window-preview-0.1.1 視窗版打包成功](https://github.com/cloud-sky-0128/billiard-management-system/actions/runs/35870443565)
 
 ## 尚需實機簽收
 
-1. 新版發布後從 GitHub 重新下載附件，核對 SHA-256，並在下載版再次抽查 PNG／CSV 存檔。
-2. 用乾淨 Windows 電腦驗證首次啟動、正常關閉、一般使用者權限及實際離線操作。
-3. 分別驗證有 WebView2、沒有 WebView2、先離線安裝 Runtime 三種情況。
-4. 將第二備份位置放到另一顆實體磁碟或外接碟，測試拔除後告警、重新接回，以及從該碟實際還原。
+1. 用乾淨 Windows 電腦驗證首次啟動、正常關閉、一般使用者權限及實際離線操作。
+2. 分別驗證有 WebView2、沒有 WebView2、先離線安裝 Runtime 三種情況。
+3. 將第二備份位置放到另一顆實體磁碟或外接碟，測試拔除後告警、重新接回，以及從該碟實際還原。
 
 安裝程式、桌面捷徑、自動更新和程式碼簽章仍可後續安排。兩個下載 EXE 目前沒有簽章；不要將 SHA-256 相符解讀為已簽章或全部功能已驗收。
