@@ -373,14 +373,18 @@ def update_rate_settings():
         return redirect(url_for(".rate_settings_page"))
     hidden_reservations = db.execute(
         """SELECT DISTINCT table_no FROM reservations
-           WHERE status = 'active' AND table_no > ? ORDER BY table_no""",
-        (table_count,),
+           WHERE status = 'active' AND table_no > ?
+             AND datetime(CASE WHEN end_time = '' THEN
+                 strftime('%Y-%m-%dT%H:%M', start_time, '+1 hour')
+                 ELSE end_time END) > datetime(?)
+           ORDER BY table_no""",
+        (table_count, datetime.now().isoformat(timespec="seconds")),
     ).fetchall()
     if hidden_reservations:
         table_labels = "、".join(str(row["table_no"]) for row in hidden_reservations)
         db.rollback()
         flash(
-            f"無法縮減球檯數，請先移桌、取消或完成這些桌號的預約：{table_labels}。",
+            f"無法縮減球檯數，請先移桌或取消這些桌號尚未結束的預約：{table_labels}。",
             "error",
         )
         return redirect(url_for(".rate_settings_page"))

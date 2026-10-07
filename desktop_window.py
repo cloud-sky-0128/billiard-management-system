@@ -63,6 +63,8 @@ def main() -> int:
         # Import only after the single-instance check; never fall back to MSHTML.
         import webview
 
+        webview.settings["ALLOW_DOWNLOADS"] = True
+
         app = create_app()
         server = create_server(app, host=HOST, port=port, threads=4)
         backup_stop = start_backup_scheduler(

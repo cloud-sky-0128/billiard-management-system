@@ -34,6 +34,11 @@ class DesktopWindowTestCase(unittest.TestCase):
         import sys
 
         webview = MagicMock()
+        webview.settings = {"ALLOW_DOWNLOADS": False}
+        download_settings = []
+        webview.create_window.side_effect = lambda *args, **kwargs: download_settings.append(
+            webview.settings["ALLOW_DOWNLOADS"]
+        )
         create_app.return_value.config = {"DATABASE": "test.db"}
         server = create_server.return_value
         scheduler.return_value = threading.Event()
@@ -41,6 +46,7 @@ class DesktopWindowTestCase(unittest.TestCase):
             self.assertEqual(desktop_window.main(), 0)
         ready.assert_called_once()
         webview.start.assert_called_once_with(gui="edgechromium")
+        self.assertEqual(download_settings, [True])
         self.assertEqual(webview.create_window.call_args.args[:2], (
             "撞球館管理系統", "http://127.0.0.1:8765"
         ))

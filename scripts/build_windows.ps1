@@ -1,14 +1,15 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$BuildDirectory = Join-Path $ProjectRoot "build"
-$OutputDirectory = Join-Path $ProjectRoot "dist\BilliardManager"
+$BuildDirectory = Join-Path $ProjectRoot "build\portable"
+$DistDirectory = Join-Path $ProjectRoot "dist\portable"
+$OutputDirectory = Join-Path $DistDirectory "BilliardManager"
 $ZipPath = Join-Path $ProjectRoot "dist\BilliardManager-windows-x64.zip"
 $GuidePath = Join-Path $ProjectRoot "docs\WINDOWS_PORTABLE.md"
 
 Set-Location $ProjectRoot
 
-foreach ($Path in @($BuildDirectory, $OutputDirectory, $ZipPath)) {
+foreach ($Path in @($BuildDirectory, $DistDirectory, $ZipPath)) {
     if (Test-Path -LiteralPath $Path) {
         $ResolvedPath = (Resolve-Path -LiteralPath $Path).Path
         if (-not $ResolvedPath.StartsWith($ProjectRoot + [IO.Path]::DirectorySeparatorChar)) {
@@ -18,7 +19,7 @@ foreach ($Path in @($BuildDirectory, $OutputDirectory, $ZipPath)) {
     }
 }
 
-python -m PyInstaller --noconfirm --clean billiard-manager.spec
+python -m PyInstaller --noconfirm --clean --workpath $BuildDirectory --distpath $DistDirectory billiard-manager.spec
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller build failed."
 }

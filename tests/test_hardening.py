@@ -429,6 +429,91 @@ class HardeningTests(unittest.TestCase):
         count = int(self.value("SELECT value FROM settings WHERE key='table_count'"))
         self.assertEqual(self.value("SELECT count(*) FROM customer_tabs WHERE status!='closed' AND table_no>?", (count,)), 0)
 
+    def test_shrink_ignores_expired_reservations_but_blocks_live_ones(self):
+        now = datetime(2026, 10, 7, 12, 0)
+        cases = [
+            ('past explicit', '2026-10-07T09:00', '2026-10-07T11:00', 'active', True),
+            ('ends now', '2026-10-07T11:00', '2026-10-07T12:00', 'active', True),
+            ('default hour ends now', '2026-10-07T11:00', '', 'active', True),
+            ('default hour still live', '2026-10-07T11:01', '', 'active', False),
+            ('future explicit', '2026-10-07T13:00', '2026-10-07T14:00', 'active', False),
+            ('past cross midnight', '2026-10-06T23:00', '2026-10-07T01:00', 'active', True),
+            ('future cross midnight', '2026-10-07T23:00', '2026-10-08T01:00', 'active', False),
+            ('cancelled future', '2026-10-07T13:00', '2026-10-07T14:00', 'cancelled', True),
+            ('completed future', '2026-10-07T13:00', '2026-10-07T14:00', 'completed', True),
+        ]
+        for name, start, end, status, can_shrink in cases:
+            with self.subTest(name=name):
+                self.execute('DELETE FROM reservations')
+                self.execute("UPDATE settings SET value='10' WHERE key='table_count'")
+                reservation_id = self.execute(
+                    """INSERT INTO reservations
+                       (table_no, guest_name, event_type, start_time, end_time, status)
+                       VALUES (10, 'Guest', 'reservation', ?, ?, ?)""",
+                    (start, end, status),
+                )
+                with patch('billiard_app.blueprints.settings.datetime', wraps=datetime) as clock:
+                    clock.now.return_value = now
+                    self.client.post('/settings/rates', data={'table_count': 9})
+                expected_count = '9' if can_shrink else '10'
+                self.assertEqual(
+                    self.value("SELECT value FROM settings WHERE key='table_count'"),
+                    expected_count,
+                )
+                with self.app.app_context():
+                    row = get_db().execute(
+                        'SELECT table_no, start_time, end_time, status FROM reservations WHERE id=?',
+                        (reservation_id,),
+                    ).fetchone()
+                self.assertEqual(tuple(row), (10, start, end, status))
+
+    def test_removed_table_keeps_editable_history_without_accepting_future_bookings(self):
+        now = datetime(2026, 10, 7, 12, 0)
+        reservation_id = self.execute(
+            """INSERT INTO reservations
+               (table_no, guest_name, event_type, start_time, end_time, status)
+               VALUES (10, 'Old guest', 'reservation', '2026-10-06T10:03',
+                       '2026-10-06T11:03', 'active')"""
+        )
+        with patch('billiard_app.blueprints.settings.datetime', wraps=datetime) as clock:
+            clock.now.return_value = now
+            self.client.post('/settings/rates', data={'table_count': 9})
+        self.assertEqual(self.value("SELECT value FROM settings WHERE key='table_count'"), '9')
+
+        page = self.client.get('/calendar?month=2026-10&date=2026-10-06').get_data(as_text=True)
+        self.assertIn('<option value="10" selected>10 號桌（已停用）</option>', page)
+
+        with patch('billiard_app.blueprints.reservations.datetime', wraps=datetime) as clock:
+            clock.now.return_value = now
+            self.client.post(f'/reservations/{reservation_id}', data={
+                'table_no': 10, 'guest_name': 'Edited guest', 'event_type': 'reservation',
+                'date': '2026-10-06', 'start_time': '10:03', 'end_time': '11:03',
+                'note': 'history only',
+            })
+        self.assertEqual(
+            self.value('SELECT guest_name FROM reservations WHERE id=?', (reservation_id,)),
+            'Edited guest',
+        )
+
+        with patch('billiard_app.blueprints.reservations.datetime', wraps=datetime) as clock:
+            clock.now.return_value = now
+            self.reserve(table_no=10, guest_name='Rejected new booking',
+                         date='2026-10-08', start_time='10:00', end_time='11:00')
+            self.client.post(f'/reservations/{reservation_id}', data={
+                'table_no': 10, 'guest_name': 'Rejected extension', 'event_type': 'reservation',
+                'date': '2026-10-08', 'start_time': '10:00', 'end_time': '11:00',
+            })
+        self.assertEqual(self.value('SELECT COUNT(*) FROM reservations'), 1)
+        with self.app.app_context():
+            row = get_db().execute(
+                'SELECT guest_name, table_no, start_time, end_time FROM reservations WHERE id=?',
+                (reservation_id,),
+            ).fetchone()
+        self.assertEqual(
+            tuple(row),
+            ('Edited guest', 10, '2026-10-06T10:03', '2026-10-06T11:03'),
+        )
+
     def test_timed_session_transfer_preserves_timer_rate_and_bill(self):
         self.execute('UPDATE table_rates SET timed_rate_per_min_cents=333 WHERE table_no=1')
         self.execute('UPDATE table_rates SET timed_rate_per_min_cents=999 WHERE table_no=2')

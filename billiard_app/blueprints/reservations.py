@@ -224,7 +224,7 @@ def save_reservation(reservation_id: int | None = None):
         start, end = schedule_times()
         if (
             not table_nos
-            or any(not 1 <= table_no <= table_count_value() for table_no in table_nos)
+            or any(table_no < 1 for table_no in table_nos)
             or not guest_name
         ):
             raise ValueError("請填寫姓名並至少選擇一張有效球桌。")
@@ -236,12 +236,35 @@ def save_reservation(reservation_id: int | None = None):
 
     try:
         db.execute("BEGIN IMMEDIATE")
-        if reservation_id is not None and not db.execute(
-            "SELECT id FROM reservations WHERE id = ? AND status = 'active'", (reservation_id,)
-        ).fetchone():
+        existing = (
+            db.execute(
+                "SELECT * FROM reservations WHERE id = ? AND status = 'active'",
+                (reservation_id,),
+            ).fetchone()
+            if reservation_id is not None else None
+        )
+        if reservation_id is not None and existing is None:
             db.rollback()
             flash("找不到可修改的預約。", "error")
             return schedule_redirect("reservations.calendar_page")
+        if any(table_no > table_count_value() for table_no in table_nos):
+            now = datetime.now()
+            # Removed tables may retain historical bookings, never future slots.
+            try:
+                keeps_history = (
+                    existing is not None
+                    and table_nos == [existing["table_no"]]
+                    and datetime.fromisoformat(
+                        reservation_end(existing["start_time"], existing["end_time"])
+                    ) <= now
+                    and datetime.fromisoformat(reservation_end(start, end)) <= now
+                )
+            except (TypeError, ValueError, OverflowError):
+                keeps_history = False
+            if not keeps_history:
+                db.rollback()
+                flash("球檯已停用，請選擇目前有效的球桌。", "error")
+                return schedule_redirect("reservations.calendar_page")
         for table_no in table_nos:
             conflict = db.execute(
                 """SELECT id FROM reservations

@@ -120,7 +120,7 @@
           <summary>修改預約</summary>
           <form class="schedule-form" method="post" action="{{ url_for('reservations.save_reservation', reservation_id=item.id) }}">
             <label>日期 <input type="date" name="date" value="{{ item.start_time[:10] }}" required></label>
-            <label>球檯 <select name="table_no" required>{% for no in range(1, table_count + 1) %}<option value="{{ no }}" {% if no == item.table_no %}selected{% endif %}>{{ table_label(no) }}</option>{% endfor %}</select></label>
+            <label>球檯 <select name="table_no" required>{% if item.table_no > table_count %}<option value="{{ item.table_no }}" selected>{{ table_label(item.table_no) }}（已停用）</option>{% endif %}{% for no in range(1, table_count + 1) %}<option value="{{ no }}" {% if no == item.table_no %}selected{% endif %}>{{ table_label(no) }}</option>{% endfor %}</select></label>
             <label>用途 <select name="event_type">{% for value, label in [('reservation', '一般預約'), ('course', '課程'), ('club', '社團')] %}<option value="{{ value }}" {% if value == item.event_type %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
             <label>名稱／電話 <input name="guest_name" value="{{ item.guest_name }}" maxlength="100" required></label>
             <input type="hidden" name="phone" value="{{ item.phone }}">

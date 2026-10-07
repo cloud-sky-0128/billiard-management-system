@@ -2428,8 +2428,10 @@ assert 'Database startup check failed' in log_path(database).read_text(encoding=
                   "start_time": "10:00", "end_time": "11:00"},
         )
         self.assertEqual(self.db_value("SELECT COUNT(*) FROM reservations WHERE status='active'"), 1)
-        response = self.client.post("/settings/rates", data={"table_count": "9"}, follow_redirects=True)
-        self.assertIn("請先移桌、取消或完成這些桌號的預約：10", response.get_data(as_text=True))
+        with patch("billiard_app.blueprints.settings.datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime(2026, 10, 7, 12, 0)
+            response = self.client.post("/settings/rates", data={"table_count": "9"}, follow_redirects=True)
+        self.assertIn("請先移桌或取消這些桌號尚未結束的預約：10", response.get_data(as_text=True))
         self.assertEqual(self.db_value("SELECT value FROM settings WHERE key='table_count'"), "10")
         reservation_id = self.db_value("SELECT id FROM reservations WHERE table_no=10")
         self.client.post(f"/reservations/{reservation_id}/cancel", data={"date": "2026-10-10"})
